@@ -155,6 +155,9 @@ de:
         warning: Warnung
     dialog:
       close: Schließen
+    icon_picker:
+      no_matching_icons: Keine passenden Icons
+      search_placeholder: Icons suchen...
     link:
       opens_in_new_tab: "(öffnet in neuem Tab)"
     pill:
