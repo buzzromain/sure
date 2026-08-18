@@ -52,11 +52,18 @@ class OnchainWalletItemsController < ApplicationController
 
     return render_error_response("Wallet address is required.") if address.blank?
 
-    # "auto" (or blank) → detect the chain from the address format; for EVM
-    # addresses, pick the first supported chain the address is active on.
+    # "auto" (or blank) → detect the chain from the address format. A 0x address
+    # does not identify a network, so we only auto-pick when the probe finds a
+    # single candidate and otherwise ask the user to choose.
     if chain.blank? || chain == "auto"
-      chain = resolve_auto_chain(address)
-      return render_error_response("Could not detect the blockchain from this address.") if chain.blank?
+      candidates = resolve_auto_chains(address)
+
+      return render_error_response(t(".errors.chain_not_detected")) if candidates.empty?
+      if candidates.size > 1
+        return render_error_response(t(".errors.ambiguous_chain", chains: candidates.map(&:titleize).to_sentence))
+      end
+
+      chain = candidates.first
     end
 
     return render_error_response("Choose a supported blockchain.") unless chain.in?(OnchainWalletAccount::CHAINS)
@@ -92,8 +99,8 @@ class OnchainWalletItemsController < ApplicationController
   rescue Provider::MempoolSpace::Error, Provider::Etherscan::Error, Provider::Blockscout::Error, Provider::SolanaRpc::Error, ArgumentError => e
     render_error_response(e.message)
   rescue StandardError => e
-    Rails.logger.error("On-chain wallet link failed: #{e.class} - #{e.message}")
-    render_error_response("Could not link wallet. #{e.message}")
+    capture_wallet_error("Failed to link on-chain wallet", chain: chain, error: e)
+    render_error_response(t(".errors.unexpected"))
   end
 
   def edit_wallet
@@ -179,8 +186,8 @@ class OnchainWalletItemsController < ApplicationController
   rescue Provider::MempoolSpace::Error, Provider::Etherscan::Error, Provider::Blockscout::Error, Provider::SolanaRpc::Error, ArgumentError => e
     render_edit_error(chain, old_address, new_address, e.message)
   rescue StandardError => e
-    Rails.logger.error("On-chain wallet update failed: #{e.class} - #{e.message}")
-    render_edit_error(chain, old_address, new_address, "Could not update wallet. #{e.message}")
+    capture_wallet_error("Failed to update on-chain wallet address", chain: chain, error: e)
+    render_edit_error(chain, old_address, new_address, t(".errors.unexpected"))
   end
 
   def destroy_account
@@ -203,6 +210,26 @@ class OnchainWalletItemsController < ApplicationController
   end
 
   private
+    # Unexpected failures are recorded for support in the super-admin debug log;
+    # the user only ever sees a generic message so internal details never leak.
+    def capture_wallet_error(message, chain:, error:)
+      DebugLogEntry.capture(
+        category: "sync",
+        level: "error",
+        message: "#{message}: #{error.class} - #{error.message}",
+        source: self.class.name,
+        provider_key: "onchain_wallet",
+        family: Current.family,
+        metadata: {
+          onchain_wallet_item_id: @onchain_wallet_item&.id,
+          chain: chain,
+          error_class: error.class.name,
+          error_message: error.message,
+          backtrace: error.backtrace&.first(5)
+        }
+      )
+    end
+
     def remove_wallet_accounts!(wallet_accounts)
       accounts = wallet_accounts.is_a?(ActiveRecord::Relation) ? wallet_accounts.to_a : Array(wallet_accounts)
 
@@ -221,13 +248,26 @@ class OnchainWalletItemsController < ApplicationController
       params.require(:onchain_wallet_item).permit(:name, :ethereum_data_provider, :etherscan_api_key, :sync_start_date)
     end
 
-    def resolve_auto_chain(address)
+    # @return [Array<String>] the chains this address could belong to
+    def resolve_auto_chains(address)
       case OnchainWalletAccount.detect_chain_type(address)
-      when :bitcoin then "bitcoin"
-      when :solana  then "solana"
-      when :evm
-        OnchainWalletAccount::EVM_CHAINS.find { |c| Provider::Blockscout.new(chain: c).has_activity?(address) } || "ethereum"
+      when :bitcoin then [ "bitcoin" ]
+      when :solana  then [ "solana" ]
+      when :evm     then detect_evm_chains(address)
+      else []
       end
+    end
+
+    # Costs exactly one bounded Blockscout probe per supported EVM chain (see
+    # Provider::Blockscout#has_activity?); it never pulls transaction or token
+    # history. Falls back to Ethereum when no chain reports activity so an
+    # unused address still gets a sensible import attempt.
+    def detect_evm_chains(address)
+      candidates = OnchainWalletAccount::EVM_CHAINS.select do |evm_chain|
+        Provider::Blockscout.new(chain: evm_chain).has_activity?(address)
+      end
+
+      candidates.presence || [ "ethereum" ]
     end
 
     def validate_wallet_address!(item, chain, address)

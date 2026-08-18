@@ -422,7 +422,216 @@ class OnchainWalletItemsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Wallet disconnected.", flash[:notice]
   end
 
+  test "wallet mutations are scoped to the current family" do
+    other_item = families(:empty).onchain_wallet_items.create!(name: "On-chain Wallets")
+    address = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080"
+    other_item.onchain_wallet_accounts.create!(
+      chain: "bitcoin",
+      wallet_address: address,
+      asset_kind: "native",
+      symbol: "BTC",
+      name: "Bitcoin",
+      currency: "USD"
+    )
+
+    get manage_onchain_wallet_item_path(other_item)
+    assert_response :not_found
+
+    delete wallet_onchain_wallet_item_path(other_item, chain: "bitcoin", wallet_address: address)
+    assert_response :not_found
+
+    assert other_item.onchain_wallet_accounts.exists?
+  end
+
+  test "unexpected link failure is logged for support but never shown to the user" do
+    address = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080"
+
+    Provider::MempoolSpace.any_instance.stubs(:valid_address?).returns(true)
+    OnchainWalletItem::Importer.any_instance.stubs(:import_wallet!).raises(RuntimeError, "PG::Error: host=db user=postgres password=hunter2")
+
+    assert_difference -> { DebugLogEntry.count }, 1 do
+      post link_wallet_onchain_wallet_items_path,
+           params: { source: "account_modal", chain: "bitcoin", wallet_address: address },
+           as: :turbo_stream,
+           headers: { "Turbo-Frame" => "modal" }
+    end
+
+    assert_response :unprocessable_entity
+    assert_no_match(/hunter2/, response.body)
+    assert_match I18n.t("onchain_wallet_items.link_wallet.errors.unexpected"), response.body
+
+    entry = DebugLogEntry.order(:created_at).last
+    assert_equal "onchain_wallet", entry.provider_key
+    assert_equal @family, entry.family
+    assert_includes entry.message, "hunter2"
+  end
+
+  test "expected provider errors are still surfaced when linking" do
+    address = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080"
+
+    Provider::MempoolSpace.any_instance.stubs(:valid_address?).returns(true)
+    OnchainWalletItem::Importer.any_instance.stubs(:import_wallet!).raises(Provider::MempoolSpace::Error, "mempool.space is temporarily unavailable")
+
+    post link_wallet_onchain_wallet_items_path,
+         params: { source: "account_modal", chain: "bitcoin", wallet_address: address },
+         as: :turbo_stream,
+         headers: { "Turbo-Frame" => "modal" }
+
+    assert_response :unprocessable_entity
+    assert_match "mempool.space is temporarily unavailable", response.body
+  end
+
+  test "unexpected wallet update failure is logged for support but never shown to the user" do
+    item = @family.onchain_wallet_items.create!(name: "On-chain Wallets")
+    old_address = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080"
+    new_address = "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq"
+    item.onchain_wallet_accounts.create!(
+      chain: "bitcoin",
+      wallet_address: old_address,
+      asset_kind: "native",
+      symbol: "BTC",
+      name: "Bitcoin",
+      currency: "USD"
+    )
+
+    Provider::MempoolSpace.any_instance.stubs(:valid_address?).returns(true)
+    OnchainWalletItem::Importer.any_instance.stubs(:import_wallet!).raises(RuntimeError, "PG::Error: host=db user=postgres password=hunter2")
+
+    assert_difference -> { DebugLogEntry.count }, 1 do
+      patch update_wallet_onchain_wallet_item_path(item),
+            params: { source: "account_modal", chain: "bitcoin", old_wallet_address: old_address, wallet_address: new_address },
+            as: :turbo_stream,
+            headers: { "Turbo-Frame" => "modal" }
+    end
+
+    assert_response :unprocessable_entity
+    assert_no_match(/hunter2/, response.body)
+    assert_match I18n.t("onchain_wallet_items.update_wallet.errors.unexpected"), response.body
+    assert_equal "onchain_wallet", DebugLogEntry.order(:created_at).last.provider_key
+  end
+
+  test "EVM auto-detection issues one bounded probe per chain and never walks token history" do
+    address = "0xde0b295669a9fd93d5f28d9ec85e40f4cb697bae"
+    probe_urls = []
+
+    Provider::Blockscout.any_instance.stubs(:throttle_request)
+    Provider::Blockscout.any_instance.expects(:get_erc20_transfers).never
+    Provider::Blockscout.any_instance.expects(:get_normal_transactions).never
+    Provider::Blockscout.stubs(:get).with { |url| probe_urls << url }.returns(
+      blockscout_response(200, { "coin_balance" => "1000000000000000000" })
+    )
+
+    assert_no_difference -> { OnchainWalletAccount.count } do
+      post link_wallet_onchain_wallet_items_path,
+           params: { source: "account_modal", chain: "auto", wallet_address: address },
+           as: :turbo_stream,
+           headers: { "Turbo-Frame" => "modal" }
+    end
+
+    # Exactly one address-summary request per supported EVM chain, no pagination.
+    assert_equal OnchainWalletAccount::EVM_CHAINS.size, probe_urls.size
+    assert probe_urls.all? { |url| url.include?("/api/v2/addresses/#{address}") }, probe_urls.inspect
+
+    # Every chain reported activity, so the user is asked to pick one instead of
+    # the address silently resolving to whichever chain happened to match first.
+    assert_response :unprocessable_entity
+    assert_match "more than one network", response.body
+  end
+
+  test "EVM auto-detection links the single chain the address is active on" do
+    address = "0xde0b295669a9fd93d5f28d9ec85e40f4cb697bae"
+
+    Provider::Blockscout.any_instance.stubs(:throttle_request)
+    # Mocha matches the most recently defined expectation first, so the
+    # Polygon-specific stub has to come after the catch-all.
+    Provider::Blockscout.stubs(:get).returns(blockscout_response(200, { "coin_balance" => nil }))
+    Provider::Blockscout.stubs(:get).with { |url| url.start_with?("https://polygon.blockscout.com") }.returns(
+      blockscout_response(200, { "coin_balance" => "1000000000000000000" })
+    )
+    Provider::Blockscout.any_instance.stubs(:get_normal_transactions).returns([])
+    Provider::Blockscout.any_instance.stubs(:get_erc20_transfers).returns([])
+    OnchainWalletAccount::SecurityResolver.stubs(:resolve).returns(nil)
+    OnchainWalletItem.any_instance.stubs(:process_accounts).returns([])
+
+    post link_wallet_onchain_wallet_items_path,
+         params: { source: "account_modal", chain: "auto", wallet_address: address },
+         as: :turbo_stream,
+         headers: { "Turbo-Frame" => "modal" }
+
+    assert_response :success
+    assert_equal "Wallet linked.", flash[:notice]
+    assert OnchainWalletAccount.exists?(chain: "polygon", wallet_address: address, asset_kind: "native")
+  end
+
+  test "auto-detection falls back to Ethereum when no EVM chain reports activity" do
+    address = "0xde0b295669a9fd93d5f28d9ec85e40f4cb697bae"
+
+    Provider::Blockscout.any_instance.stubs(:throttle_request)
+    Provider::Blockscout.stubs(:get).returns(blockscout_response(200, { "coin_balance" => nil }))
+    Provider::Blockscout.any_instance.stubs(:get_normal_transactions).returns([])
+    Provider::Blockscout.any_instance.stubs(:get_erc20_transfers).returns([])
+
+    post link_wallet_onchain_wallet_items_path,
+         params: { source: "account_modal", chain: "auto", wallet_address: address },
+         as: :turbo_stream,
+         headers: { "Turbo-Frame" => "modal" }
+
+    # Ethereum is attempted, and the importer reports the empty address.
+    assert_response :unprocessable_entity
+    assert_match "No Ethereum balance", response.body
+  end
+
+  test "auto-detection keeps working for Bitcoin and Solana addresses without probing EVM chains" do
+    Provider::Blockscout.any_instance.expects(:has_activity?).never
+    Provider::MempoolSpace.any_instance.stubs(:valid_address?).returns(true)
+    Provider::MempoolSpace.any_instance.stubs(:get_address).returns({
+      "chain_stats" => { "funded_txo_sum" => 100_000_000, "spent_txo_sum" => 0 },
+      "mempool_stats" => { "funded_txo_sum" => 0, "spent_txo_sum" => 0 }
+    })
+    Provider::MempoolSpace.any_instance.stubs(:get_address_txs).returns([])
+    Provider::MempoolSpace.any_instance.stubs(:get_mempool_txs).returns([])
+    OnchainWalletAccount::SecurityResolver.stubs(:resolve).returns(nil)
+    OnchainWalletItem.any_instance.stubs(:process_accounts).returns([])
+
+    btc_address = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080"
+    post link_wallet_onchain_wallet_items_path,
+         params: { source: "account_modal", chain: "auto", wallet_address: btc_address },
+         as: :turbo_stream,
+         headers: { "Turbo-Frame" => "modal" }
+
+    assert_response :success
+    assert OnchainWalletAccount.exists?(chain: "bitcoin", wallet_address: btc_address)
+
+    Provider::SolanaRpc.any_instance.stubs(:valid_address?).returns(true)
+    Provider::SolanaRpc.any_instance.stubs(:get_native_balance).returns("2000000000")
+    Provider::SolanaRpc.any_instance.stubs(:get_token_balances).returns([])
+    Provider::SolanaRpc.any_instance.stubs(:get_transactions).returns([])
+
+    sol_address = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"
+    post link_wallet_onchain_wallet_items_path,
+         params: { source: "account_modal", chain: "auto", wallet_address: sol_address },
+         as: :turbo_stream,
+         headers: { "Turbo-Frame" => "modal" }
+
+    assert_response :success
+    assert OnchainWalletAccount.exists?(chain: "solana", wallet_address: sol_address)
+  end
+
+  test "auto-detection surfaces a friendly error when the address matches no known chain" do
+    post link_wallet_onchain_wallet_items_path,
+         params: { source: "account_modal", chain: "auto", wallet_address: "definitely-not-an-address" },
+         as: :turbo_stream,
+         headers: { "Turbo-Frame" => "modal" }
+
+    assert_response :unprocessable_entity
+    assert_match I18n.t("onchain_wallet_items.link_wallet.errors.chain_not_detected"), response.body
+  end
+
   private
+    def blockscout_response(code, body)
+      Struct.new(:code, :parsed_response).new(code, body)
+    end
+
     def erc20_transfer(address:, contract:, symbol:, name:, decimals:, value:)
       {
         "contractAddress" => contract,

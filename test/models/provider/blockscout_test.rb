@@ -55,6 +55,53 @@ class Provider::BlockscoutTest < ActiveSupport::TestCase
     assert_equal "1761183063", t["timeStamp"]
   end
 
+  test "has_activity? costs a single request and never walks the transfer history" do
+    Provider::Blockscout.any_instance.stubs(:throttle_request)
+    Provider::Blockscout.any_instance.expects(:get_erc20_transfers).never
+    Provider::Blockscout.any_instance.expects(:get_normal_transactions).never
+    Provider::Blockscout.expects(:get).once.returns(
+      Resp.new(200, { "coin_balance" => "2000000000000000000", "has_tokens" => false, "has_token_transfers" => false })
+    )
+
+    provider = Provider::Blockscout.new(chain: "ethereum")
+    assert provider.has_activity?("0xde0b295669a9fd93d5f28d9ec85e40f4cb697bae")
+  end
+
+  test "has_activity? detects token-only wallets with no native balance" do
+    Provider::Blockscout.any_instance.stubs(:throttle_request)
+    Provider::Blockscout.expects(:get).once.returns(
+      Resp.new(200, { "coin_balance" => nil, "has_tokens" => true, "has_token_transfers" => true })
+    )
+
+    provider = Provider::Blockscout.new(chain: "polygon")
+    assert provider.has_activity?("0xf5c6b8e6eb92e560a33f6fd6d86a1c734d2d7840")
+  end
+
+  test "has_activity? is false for an address the chain has never seen" do
+    Provider::Blockscout.any_instance.stubs(:throttle_request)
+    Provider::Blockscout.expects(:get).once.returns(
+      Resp.new(200, { "coin_balance" => nil, "has_tokens" => false, "has_token_transfers" => false, "has_logs" => false })
+    )
+
+    provider = Provider::Blockscout.new(chain: "base")
+    assert_not provider.has_activity?("0xde0b295669a9fd93d5f28d9ec85e40f4cb697bae")
+  end
+
+  test "has_activity? is false when the chain's Blockscout instance fails" do
+    Provider::Blockscout.any_instance.stubs(:throttle_request)
+    Provider::Blockscout.stubs(:get).returns(Resp.new(500, nil))
+
+    provider = Provider::Blockscout.new(chain: "gnosis", max_retries: 0)
+    assert_not provider.has_activity?("0xde0b295669a9fd93d5f28d9ec85e40f4cb697bae")
+  end
+
+  test "has_activity? rejects malformed addresses without any request" do
+    Provider::Blockscout.expects(:get).never
+
+    provider = Provider::Blockscout.new(chain: "ethereum")
+    assert_not provider.has_activity?("not-an-address")
+  end
+
   test "raises RateLimitError on 429" do
     Provider::Blockscout.any_instance.stubs(:throttle_request)
     Provider::Blockscout.stubs(:get).returns(Resp.new(429, nil))

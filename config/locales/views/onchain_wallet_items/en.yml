@@ -1,6 +1,14 @@
 ---
 en:
   onchain_wallet_items:
+    link_wallet:
+      errors:
+        ambiguous_chain: "This address is active on more than one network (%{chains}). Pick the network you want to track."
+        chain_not_detected: Could not detect the blockchain from this address.
+        unexpected: Could not link wallet. Please try again, or contact support if the problem persists.
+    update_wallet:
+      errors:
+        unexpected: Could not update wallet. Please try again, or contact support if the problem persists.
     wallet_modal:
       title: Link On-chain Wallet
       subtitle: Track a Bitcoin, Ethereum, Solana, or supported EVM wallet by address.

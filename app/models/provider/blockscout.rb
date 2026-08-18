@@ -32,6 +32,10 @@ class Provider::Blockscout
   SUPPORTED_CHAINS = DEFAULT_BASE_URLS.keys.freeze
 
   ADDRESS_PATTERN = /\A0x[0-9a-fA-F]{40}\z/
+  # Boolean flags the v2 address endpoint returns alongside the coin balance.
+  # They let us spot token-only wallets (zero native balance) without touching
+  # the paginated transfer history.
+  ACTIVITY_FLAGS = %w[has_tokens has_token_transfers has_logs].freeze
   MIN_REQUEST_INTERVAL = 0.2
   DEFAULT_MAX_RETRIES = 3
   DEFAULT_RETRY_BASE_DELAY = 0.5
@@ -59,18 +63,24 @@ class Provider::Blockscout
 
   # Whether this address has any balance or token activity on this chain.
   # Used by auto-detect to find which EVM chain(s) a 0x address is active on.
+  #
+  # Deliberately costs exactly ONE request: the address summary already carries
+  # the coin balance and the token/transfer flags, so auto-detection never walks
+  # the paginated history (which can cost up to MAX_PAGES requests per chain).
   def has_activity?(address)
     return false unless valid_address?(address)
 
-    get_native_balance(address).to_d.positive? || get_erc20_transfers(address).any?
+    summary = address_summary(address)
+    return false unless summary.is_a?(Hash)
+
+    summary["coin_balance"].to_s.to_d.positive? || ACTIVITY_FLAGS.any? { |flag| summary[flag] == true }
   rescue Error
     false
   end
 
   # @return [String] native coin balance in wei (matches Etherscan's "balance")
   def get_native_balance(address)
-    validate_address!(address)
-    data = api_get("/api/v2/addresses/#{ERB::Util.url_encode(address)}")
+    data = address_summary(address)
     data.is_a?(Hash) ? data["coin_balance"].to_s : "0"
   end
 
@@ -113,6 +123,13 @@ class Provider::Blockscout
   end
 
   private
+    # Single, unpaginated request returning the v2 address payload (coin
+    # balance + activity flags).
+    def address_summary(address)
+      validate_address!(address)
+      api_get("/api/v2/addresses/#{ERB::Util.url_encode(address)}")
+    end
+
     def base_url
       ENV["BLOCKSCOUT_#{chain.upcase}_URL"].presence || DEFAULT_BASE_URLS.fetch(chain)
     end
