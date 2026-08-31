@@ -1,80 +1,23 @@
-<%# locals: (goal:, unattributed:, consumed:) %>
+<%# locals: (goal:, consumed:) %>
 
-<%# One card, two states of the same story — money that left a goal-backed
-    account. Two cards side by side read as two different features; a warm
-    tint on the still-open half and a neutral one on the settled half says
-    which is which without making the reader compare two headings. %>
+<%# POC: no embedded transaction list — Pocket's own card doesn't list rows
+    either, just a status line and a link out. The full list already exists
+    at the other end of that link (the tag filter); repeating it here just to
+    repeat it added a second place for the two to quietly disagree. %>
 <% consumed_total = consumed.sum { |entry| entry.amount.to_d } %>
 <% unaccounted = goal.consumption_unaccounted_for(consumed_total) %>
-<% displayed_consumed = consumed.first(Goal::CONSUMED_DISPLAY_LIMIT) %>
-<% hidden_consumed_count = consumed.size - displayed_consumed.size %>
 
-<div class="bg-container rounded-xl shadow-border-xs p-4 space-y-4">
-  <% if unattributed.any? %>
-    <div class="space-y-3">
-      <div class="flex items-start gap-3">
-        <div class="w-8 h-8 rounded-full bg-warning/10 inline-flex items-center justify-center text-warning shrink-0">
-          <%= icon("arrow-down-left", size: "sm") %>
-        </div>
-        <div class="min-w-0">
-          <h2 class="text-sm font-medium text-primary"><%= t("goals.unattributed_outflows.heading") %></h2>
-          <p class="text-xs text-secondary mt-0.5"><%= t("goals.unattributed_outflows.body", goal: goal.name) %></p>
-        </div>
+<div class="bg-container rounded-xl shadow-border-xs p-4">
+  <div class="flex items-center justify-between gap-3">
+    <div class="min-w-0 flex items-center gap-2">
+      <div class="w-8 h-8 rounded-full bg-surface-inset inline-flex items-center justify-center text-secondary shrink-0">
+        <%= icon("receipt", size: "sm") %>
       </div>
-
-      <ul class="space-y-2">
-        <% unattributed.each do |entry| %>
-          <li class="flex items-center justify-between gap-3 rounded-lg bg-warning/5 px-3 py-2">
-            <div class="min-w-0">
-              <%= link_to entry.name, entry_path(entry),
-                          data: { turbo_frame: "drawer", turbo_prefetch: false },
-                          class: "text-sm text-primary truncate hover:underline block" %>
-              <p class="text-xs text-secondary tabular-nums privacy-sensitive">
-                <%= l(entry.date, format: :long) %>
-                <span aria-hidden="true"><%= t("shared.dot_separator") %></span>
-                <%= entry.account.name %>
-              </p>
-            </div>
-            <div class="flex items-center gap-2 shrink-0">
-              <span class="text-sm text-primary tabular-nums privacy-sensitive">
-                <%= Money.new(entry.amount, entry.currency).format(precision: 0) %>
-              </span>
-              <%= render DS::Button.new(
-                    text: t("goals.unattributed_outflows.attribute"),
-                    href: consume_goal_path(goal),
-                    method: :post,
-                    params: { transaction_id: entry.entryable_id },
-                    variant: :secondary,
-                    size: :sm,
-                    confirm: CustomConfirm.new(
-                      title: t("goals.unattributed_outflows.confirm_title"),
-                      body: t("goals.unattributed_outflows.confirm_body", amount: Money.new(entry.amount, entry.currency).format, goal: goal.name),
-                      btn_text: t("goals.unattributed_outflows.confirm_cta")
-                    )
-                  ) %>
-            </div>
-          </li>
-        <% end %>
-      </ul>
-    </div>
-  <% end %>
-
-  <% if unattributed.any? && consumed.any? %>
-    <div class="border-t border-subdued -mx-4"></div>
-  <% end %>
-
-  <% if consumed.any? %>
-    <div class="space-y-3">
-      <div class="flex items-start gap-3">
-        <div class="w-8 h-8 rounded-full bg-surface-inset inline-flex items-center justify-center text-secondary shrink-0">
-          <%= icon("receipt", size: "sm") %>
-        </div>
-        <div class="min-w-0">
-          <h2 class="text-sm font-medium text-primary"><%= t("goals.consumed_outflows.heading") %></h2>
-          <p class="text-xs text-secondary mt-0.5 tabular-nums privacy-sensitive">
-            <%= t("goals.consumed_outflows.summary",
+      <div class="min-w-0">
+        <% if consumed.any? %>
+          <p class="text-sm text-primary tabular-nums privacy-sensitive truncate">
+            <%= t("goals.consumed_outflows.summary_compact",
                   total: goal.consumed_amount_money.format(precision: 0),
-                  listed: Money.new(consumed_total, goal.currency).format(precision: 0),
                   transactions: t("goals.consumed_outflows.transactions", count: consumed.size)) %>
             <% if unaccounted.positive? %>
               <span class="text-subdued">
@@ -82,53 +25,26 @@
               </span>
             <% end %>
           </p>
-        </div>
-      </div>
-
-      <ul class="space-y-2">
-        <% displayed_consumed.each do |entry| %>
-          <li class="flex items-center justify-between gap-3 rounded-lg bg-surface-inset px-3 py-2">
-            <div class="min-w-0">
-              <%= link_to entry.name, entry_path(entry),
-                          data: { turbo_frame: "drawer", turbo_prefetch: false },
-                          class: "text-sm text-primary truncate hover:underline block" %>
-              <p class="text-xs text-secondary tabular-nums privacy-sensitive">
-                <%= l(entry.date, format: :long) %>
-                <span aria-hidden="true"><%= t("shared.dot_separator") %></span>
-                <%= entry.account.name %>
-              </p>
-            </div>
-            <div class="flex items-center gap-2 shrink-0">
-              <span class="text-sm text-primary tabular-nums privacy-sensitive">
-                <%= Money.new(entry.amount, entry.currency).format %>
-              </span>
-              <%= render DS::Button.new(
-                    text: t("goals.consumed_outflows.detach"),
-                    href: release_consumption_goal_path(goal, transaction_id: entry.entryable_id),
-                    method: :delete,
-                    variant: :ghost,
-                    size: :sm,
-                    confirm: CustomConfirm.new(
-                      title: t("goals.consumed_outflows.confirm_detach_title"),
-                      body: t("goals.consumed_outflows.confirm_detach_body", amount: Money.new(entry.amount, entry.currency).format),
-                      btn_text: t("goals.consumed_outflows.confirm_detach_cta")
-                    )
-                  ) %>
-            </div>
-          </li>
         <% end %>
-      </ul>
+        <p class="text-xs text-secondary flex items-center gap-1 truncate">
+          <% if goal.tag %>
+            <%= icon("zap", size: "xs", class: "text-warning shrink-0") %>
+            <span class="truncate"><%= t("goals.consumed_outflows.tag_hint", tag: goal.tag.name) %></span>
+          <% else %>
+            <span><%= t("goals.consumed_outflows.no_tag_hint") %></span>
+          <% end %>
+        </p>
+      </div>
+    </div>
 
-      <%# "+N more" when the card is showing a subset — "Open in Transactions"
-          only when it genuinely is not, per the earlier fix: never claim less
-          or more than what the link actually reveals. %>
+    <% if goal.tag %>
       <%= render DS::Link.new(
-            text: hidden_consumed_count.positive? ? t("goals.consumed_outflows.more_in_transactions", count: hidden_consumed_count) : t("goals.consumed_outflows.open_in_transactions"),
-            variant: "outline",
-            full_width: true,
-            href: transactions_path(q: { goals: [ goal.id ] }),
+            variant: "ghost",
+            icon: "list",
+            href: transactions_path(q: { tags: [ goal.tag.name ] }),
+            aria: { label: t("goals.consumed_outflows.open_in_transactions") },
             frame: :_top
           ) %>
-    </div>
-  <% end %>
+    <% end %>
+  </div>
 </div>

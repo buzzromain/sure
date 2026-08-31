@@ -37,15 +37,8 @@
         <% if @goal.may_resume? %>
           <% menu.with_item(variant: "button", text: t(".resume"), icon: "play", href: resume_goal_path(@goal), method: :patch) %>
         <% end %>
-        <%# Partial spend: only offered on a one-off goal that is still running
-            and has something THIS READER can spend. A reserve is drawn down and
-            refilled, not consumed — the model refuses it outright. Same
-            question the lifecycle panel asks, off the same scoped list, so the
-            two doors to this dialog cannot disagree. %>
-        <% if @goal.spendable_within?(eligible_consumption_accounts.map(&:id)) %>
-          <% menu.with_item(variant: "link", text: t(".consume"), icon: "hand-coins",
-                            href: consume_goal_path(@goal), data: { turbo_frame: :modal }) %>
-        <% end %>
+        <%# POC: no manual "record a spend" entry point — tagging the
+            transaction is the one way to do this now. %>
         <% if @goal.may_complete? %>
           <% menu.with_item(
                variant: "button",
@@ -97,12 +90,10 @@
     <%= render "pending_pledge_banner", pledge: pledge %>
   <% end %>
 
-  <%# One card for both states of the same story, right below the header —
-      not after the ring, the projection chart and funding accounts. On a
-      phone that gap used to be three screens of scrolling between "was this
-      spent on X?" and "here is what X paid for". %>
-  <% if @unattributed_outflows.any? || @consumed_entries.any? || @goal.any_consumption? %>
-    <%= render "spending", goal: @goal, unattributed: @unattributed_outflows, consumed: @consumed_entries %>
+  <%# Right below the header, not after the ring/projection/funding accounts
+      — on a phone that gap used to be three screens of scrolling. %>
+  <% if @goal.tag.present? || @consumed_entries.any? || @goal.any_consumption? %>
+    <%= render "spending", goal: @goal, consumed: @consumed_entries %>
   <% end %>
 
   <% if @goal.paused? %>

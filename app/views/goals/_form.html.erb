@@ -175,6 +175,23 @@
 
     <p class="text-xs text-secondary italic tabular-nums privacy-sensitive hidden" data-goal-form-target="suggested"></p>
 
+    <%# POC: not a picker. A free choice of an existing tag risks landing on
+        one already used for something else — every past transaction under it
+        would silently start counting toward this goal. Auto-generated
+        instead: this tag has exactly one reason to exist, and can't collide
+        with one of the user's own. %>
+    <div class="rounded-lg bg-surface-inset px-3 py-2.5">
+      <p class="text-xs font-medium text-primary flex items-center gap-1.5">
+        <%= icon("zap", size: "xs", class: "text-warning shrink-0") %>
+        <% if goal.persisted? && goal.tag.present? %>
+          <%= render DS::Pill.new(label: goal.tag.name, marker: false, size: :sm, custom_color: goal.tag.color) %>
+        <% else %>
+          <span class="text-secondary"><%= t("goals.form.fields.tag_pending") %></span>
+        <% end %>
+      </p>
+      <p class="mt-1 text-xs text-secondary"><%= t("goals.form.fields.tag_hint") %></p>
+    </div>
+
     <div>
       <div class="mb-2">
         <span class="block text-sm font-medium text-primary"><%= t("goals.form.fields.funding_accounts") %></span>

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_28_090000) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_31_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -372,7 +372,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_090000) do
     t.index ["budget_id", "category_id"], name: "index_budget_categories_on_budget_id_and_category_id", unique: true
     t.index ["budget_id"], name: "index_budget_categories_on_budget_id"
     t.index ["category_id"], name: "index_budget_categories_on_category_id"
-    t.check_constraint "rolled_over_amount >= 0::numeric", name: "chk_budget_categories_rolled_over_amount_non_negative"
   end
 
   create_table "budget_shares", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -895,6 +894,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_090000) do
     t.text "notes"
     t.string "progress_basis", default: "balance", null: false
     t.string "state", default: "active", null: false
+    t.uuid "tag_id"
     t.decimal "target_amount", precision: 19, scale: 4, null: false
     t.date "target_date"
     t.string "target_mode", default: "fixed", null: false
@@ -902,13 +902,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_090000) do
     t.datetime "updated_at", null: false
     t.index ["family_id", "state"], name: "index_goals_on_family_id_and_state"
     t.index ["family_id"], name: "index_goals_on_family_id"
+    t.index ["tag_id"], name: "index_goals_on_tag_id"
     t.check_constraint "char_length(name::text) <= 255", name: "chk_savings_goals_name_length"
     t.check_constraint "consumed_amount >= 0::numeric", name: "chk_goals_consumed_amount_non_negative"
-    t.check_constraint "kind::text = ANY (ARRAY['one_off'::character varying::text, 'maintained'::character varying::text])", name: "chk_goals_kind_enum"
+    t.check_constraint "kind::text = ANY (ARRAY['one_off'::character varying, 'maintained'::character varying]::text[])", name: "chk_goals_kind_enum"
     t.check_constraint "progress_basis::text = ANY (ARRAY['balance'::character varying::text, 'contributions'::character varying::text])", name: "chk_goals_progress_basis_enum"
     t.check_constraint "state::text = ANY (ARRAY['active'::character varying::text, 'paused'::character varying::text, 'completed'::character varying::text, 'archived'::character varying::text])", name: "chk_savings_goals_state_enum"
     t.check_constraint "target_amount > 0::numeric", name: "chk_savings_goals_target_amount_positive"
-    t.check_constraint "target_mode::text = ANY (ARRAY['fixed'::character varying::text, 'months_of_expenses'::character varying::text])", name: "chk_goals_target_mode_enum"
+    t.check_constraint "target_mode::text = ANY (ARRAY['fixed'::character varying, 'months_of_expenses'::character varying]::text[])", name: "chk_goals_target_mode_enum"
   end
 
   create_table "holdings", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -1550,8 +1551,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_090000) do
     t.index ["onchain_wallet_item_id", "chain", "wallet_address"], name: "index_onchain_wallet_accounts_on_item_and_address"
     t.index ["onchain_wallet_item_id", "chain", "wallet_address"], name: "index_onchain_wallet_accounts_unique_native", unique: true, where: "((asset_kind)::text = 'native'::text)"
     t.index ["onchain_wallet_item_id"], name: "index_onchain_wallet_accounts_on_onchain_wallet_item_id"
-    t.check_constraint "asset_kind::text = 'native'::text OR contract_address IS NOT NULL", name: "chk_onchain_wallet_accounts_token_has_contract"
-    t.check_constraint "asset_kind::text = ANY (ARRAY['native'::character varying::text, 'erc20'::character varying::text, 'spl'::character varying::text])", name: "chk_onchain_wallet_accounts_known_asset_kind"
   end
 
   create_table "onchain_wallet_items", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -1661,7 +1660,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_090000) do
     t.index "lower((token)::text)", name: "index_push_subscriptions_on_lower_token", unique: true
     t.index ["last_registered_at"], name: "index_push_subscriptions_on_last_registered_at"
     t.index ["user_id"], name: "index_push_subscriptions_on_user_id"
-    t.check_constraint "environment::text = ANY (ARRAY['sandbox'::character varying::text, 'production'::character varying::text])", name: "chk_push_subscriptions_environment"
+    t.check_constraint "environment::text = ANY (ARRAY['sandbox'::character varying, 'production'::character varying]::text[])", name: "chk_push_subscriptions_environment"
     t.check_constraint "platform::text = 'ios'::text", name: "chk_push_subscriptions_platform"
   end
 
@@ -2611,6 +2610,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_090000) do
   add_foreign_key "goal_pledges", "goals", on_delete: :cascade
   add_foreign_key "goal_pledges", "transactions", column: "matched_transaction_id", on_delete: :nullify
   add_foreign_key "goals", "families", on_delete: :cascade
+  add_foreign_key "goals", "tags"
   add_foreign_key "holdings", "account_providers"
   add_foreign_key "holdings", "accounts", on_delete: :cascade
   add_foreign_key "holdings", "securities"

@@ -26,6 +26,18 @@ class Goal < ApplicationRecord
   validates :color, format: { with: /\A#[0-9A-Fa-f]{6}\z/ }, allow_nil: true
 
   belongs_to :family
+  # POC: tagging a transaction with this tag on a linked account IS the
+  # attribution action — no separate confirm dialog. See Transaction's
+  # after_add/after_remove callbacks on :tags.
+  #
+  # Not user-chosen. A free pick from existing tags risks landing on one
+  # already used for something else — every past transaction under it would
+  # silently start counting toward this goal the moment it was linked.
+  # Auto-generated and not directly editable removes that risk instead of
+  # just warning about it: this tag has exactly one reason to exist.
+  belongs_to :tag, optional: true
+  after_create :ensure_tracking_tag
+  before_save :sync_tracking_tag_name, if: :will_save_change_to_name?
   # autosave so earmark (allocated_amount) edits on already-linked accounts
   # persist through goal.save! — without it Rails only saves newly built
   # children, silently dropping changes to existing goal_accounts.
@@ -35,6 +47,30 @@ class Goal < ApplicationRecord
   has_many :linked_accounts, through: :goal_accounts, source: :account
   has_many :goal_pledges, dependent: :destroy
   before_destroy :clear_consumption_stamps
+
+  private
+    # "pockets:" — namespaced so it reads as system-managed the moment it
+    # shows up in the tag picker, not just another label a user typed.
+    # find_or_create_by! rather than create!: two goals sharing a name is
+    # possible (nothing stops it), and the second one should reuse the tag
+    # a rename left behind rather than collide on the uniqueness validation.
+    def ensure_tracking_tag
+      generated = family.tags.find_or_create_by!(name: "pockets:#{name}") do |t|
+        t.color = Tag::COLORS.sample
+      end
+      update_column(:tag_id, generated.id)
+    end
+
+    # Keeps the tag legible next to a renamed goal. Skipped if the name this
+    # goal is moving TO collides with some other tag — better a stale tag
+    # name than stealing a tag another goal (or the user) already owns.
+    def sync_tracking_tag_name
+      return unless tag_id.present?
+      return if family.tags.where.not(id: tag_id).exists?(name: "pockets:#{name}")
+
+      tag.update_column(:name, "pockets:#{name}")
+    end
+  public
 
   has_many :open_pledges,
            -> { where(status: "open").where("expires_at >= ?", Time.current) },

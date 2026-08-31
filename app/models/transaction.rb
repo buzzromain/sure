@@ -6,7 +6,12 @@ class Transaction < ApplicationRecord
   belongs_to :transfer, optional: true
 
   has_many :taggings, as: :taggable, dependent: :destroy
-  has_many :tags, through: :taggings
+  # POC: after_add/after_remove, not Tagging's own create/destroy callbacks —
+  # `transaction.tag_ids = [...]` (how the tag picker and every controller
+  # actually remove a tag) replaces the join rows with a bulk DELETE that
+  # skips Tagging's own AR callbacks entirely. These collection callbacks are
+  # the one hook Rails fires on every removal path, whichever SQL it took.
+  has_many :tags, through: :taggings, after_add: :attribute_to_linked_goal, after_remove: :detach_from_linked_goal
 
   # File attachments (receipts, invoices, etc.) using Active Storage
   # Supports images (JPEG, PNG, GIF, WebP) and PDFs up to 10MB each
@@ -407,5 +412,32 @@ class Transaction < ApplicationRecord
       return unless family
 
       FamilyMerchantAssociation.where(family: family, merchant: merchant).delete_all
+    end
+
+    # POC: tagging this transaction with a goal's tag, on one of that goal's
+    # linked accounts, IS the attribution — the same consume! a manual flow
+    # would call, just triggered by the tag instead of a confirm click.
+    def attribute_to_linked_goal(tag)
+      goal = Goal.find_by(tag_id: tag.id)
+      return unless goal && entry
+      return unless goal.linked_accounts.exists?(id: entry.account_id)
+      return unless entry.amount.positive? # outflow only, for this POC
+
+      goal.consume!(entry.amount, account: entry.account, transaction: self)
+    rescue Goal::ConsumptionRefused
+      # A tag applied somewhere it doesn't fit (goal inactive, already
+      # consumed elsewhere, exceeds the target) silently does not attribute.
+      # Good enough for a POC; a real version would surface this to the user.
+    end
+
+    # Removing the tag IS the undo — same mechanism whichever screen it
+    # happens from.
+    def detach_from_linked_goal(tag)
+      goal = Goal.find_by(tag_id: tag.id)
+      return unless goal && entry
+      return unless goal.consumed_entries([ entry.account_id ]).exists?(entry.id)
+
+      goal.release_consumption!(self)
+    rescue Goal::ConsumptionRefused
     end
 end
