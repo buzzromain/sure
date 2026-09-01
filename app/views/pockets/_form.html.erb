@@ -1,7 +1,6 @@
-<%# locals: (pocket:, account:, url:, available_tags:) %>
+<%# locals: (pocket:, account:, url:) %>
 
-<%= styled_form_with model: [ account, pocket ], url: url, class: "space-y-4",
-    data: { controller: "pocket-form" } do |f| %>
+<%= styled_form_with model: [ account, pocket ], url: url, class: "space-y-4" do |f| %>
   <div class="flex justify-center">
     <%= render "goals/color_picker", form: f, colors: Pocket::COLORS, icons: Pocket::ICONS %>
   </div>
@@ -17,7 +16,7 @@
     placeholder: t("pockets.form.description_placeholder"),
     rows: 2 %>
 
-  <div data-pocket-form-target="amountField" style="<%= "opacity:0.5;pointer-events:none" if pocket.tag_id.present? %>">
+  <div style="<%= "opacity:0.5;pointer-events:none" if pocket.tag_id.present? %>">
     <%= f.money_field :allocated_amount,
       label: t("pockets.form.allocated_amount"),
       required: !pocket.tag_id.present?,
@@ -25,44 +24,35 @@
       disabled: pocket.tag_id.present? %>
   </div>
 
-  <div>
-    <span class="block text-sm font-medium text-primary mb-2"><%= t("pockets.form.auto_fill_tag") %></span>
-    <div class="flex flex-wrap gap-2">
-      <label class="cursor-pointer">
-        <%= f.radio_button :tag_id, "",
-            class: "sr-only peer",
-            data: { pocket_form_target: "tagRadio", action: "change->pocket-form#onTagChange" } %>
-        <span class="flex items-center px-3 py-1.5 rounded-full border border-primary text-xs font-medium text-secondary select-none
-                     peer-checked:bg-container-inset peer-checked:text-primary transition-colors">
-          <%= t("pockets.form.no_tag") %>
-        </span>
-      </label>
-
-      <% available_tags.each do |tag| %>
-        <label class="cursor-pointer">
-          <%= f.radio_button :tag_id, tag.id,
-              class: "sr-only peer",
-              data: { pocket_form_target: "tagRadio", action: "change->pocket-form#onTagChange" } %>
-          <span class="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-primary text-xs font-medium text-secondary select-none
-                       peer-checked:bg-container-inset peer-checked:text-primary transition-colors">
-            <span class="w-2 h-2 rounded-full shrink-0" style="background-color: <%= tag.color %>"></span>
-            <%= tag.name %>
-          </span>
-        </label>
+  <%# Composition sketch (PR #2892 discussion): no free tag picker. "Auto-fill"
+      is a plain toggle — checking it generates a dedicated tag this pocket
+      owns outright, the same reasoning as Goal's own tracking tag. Picking an
+      existing tag risks landing on one already used for something else,
+      silently backdating its whole history into the pocket. %>
+  <div class="rounded-lg bg-surface-inset px-3 py-2.5 space-y-2">
+    <label class="flex items-center gap-2 cursor-pointer">
+      <% if pocket.tag_id.present? %>
+        <%= check_box_tag "pocket[link_new_tag]", "1", true, disabled: true, class: "checkbox checkbox--light shrink-0" %>
+      <% else %>
+        <%= hidden_field_tag "pocket[link_new_tag]", "0", id: nil %>
+        <%= check_box_tag "pocket[link_new_tag]", "1", false, class: "checkbox checkbox--light shrink-0" %>
       <% end %>
-    </div>
-  </div>
+      <span class="text-sm font-medium text-primary"><%= t("pockets.form.auto_fill_tag") %></span>
+    </label>
 
-  <div data-pocket-form-target="fillDirectionSection" class="<%= "hidden" unless pocket.tag_id.present? %> space-y-3">
-    <%= f.select :fill_direction,
-      Pocket.fill_directions.keys.map { |d| [ t("pockets.form.fill_direction.#{d}"), d ] },
-      { label: t("pockets.form.fill_direction_label") },
-      {} %>
+    <% if pocket.tag_id.present? %>
+      <p class="text-xs text-secondary flex items-center gap-1.5">
+        <%= icon("zap", size: "xs", class: "text-warning shrink-0") %>
+        <%= render DS::Pill.new(label: pocket.tag.name, marker: false, size: :sm, custom_color: pocket.tag.color) %>
+      </p>
 
-    <div class="bg-container-inset rounded-lg p-3 text-sm text-secondary flex items-start gap-2">
-      <%= icon("zap", size: "sm", class: "shrink-0 mt-0.5 text-warning") %>
-      <span><%= t("pockets.form.auto_fill_hint") %></span>
-    </div>
+      <%= f.select :fill_direction,
+        Pocket.fill_directions.keys.map { |d| [ t("pockets.form.fill_direction.#{d}"), d ] },
+        { label: t("pockets.form.fill_direction_label") },
+        {} %>
+    <% end %>
+
+    <p class="text-xs text-secondary"><%= t("pockets.form.auto_fill_hint") %></p>
   </div>
 
   <% if account.pockets.any? || pocket.persisted? %>
