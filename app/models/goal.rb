@@ -537,6 +537,15 @@ class Goal < ApplicationRecord
     convert_to_goal_currency(spent).to_d.positive?
   end
 
+  # Public wrapper around the private derivation so a live preview (see
+  # GoalsController#preview_target) can ask an UNSAVED goal what its
+  # months-of-expenses target would come out to, using the exact same
+  # computation `apply_months_of_expenses_target` runs at save time — never a
+  # second, client-side implementation that could quietly disagree with it.
+  def preview_months_of_expenses_amount
+    months_of_expenses_amount
+  end
+
   private
     # What the last `months` complete months actually cost, in FAMILY currency.
     #

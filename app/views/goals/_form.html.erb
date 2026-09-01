@@ -4,14 +4,17 @@
      dateField target is a sibling of the radios, and a controller only sees
      targets inside its own element. Scoped to the selector, dateFieldTargets
      came back empty and picking "Maintained reserve" never hid the date. %>
-<div data-controller="goal-form goal-kind"
+<div data-controller="goal-form goal-kind goal-target-preview"
      data-goal-form-currency-value="<%= Current.family.primary_currency_code %>"
      data-goal-form-require-account-value="<%= !goal.persisted? %>"
      data-goal-form-suggested-with-date-value="<%= t("goals.form.suggested_with_date") %>"
      data-goal-form-suggested-no-date-value="<%= t("goals.form.suggested_no_date") %>"
      data-goal-kind-amount-label-value="<%= t("goals.form.fields.target_amount") %>"
      data-goal-kind-balance-label-value="<%= t("goals.form.fields.target_balance") %>"
-     data-goal-kind-derivable-value="<%= goal.months_target_derivable? %>">
+     data-goal-kind-derivable-value="<%= goal.months_target_derivable? %>"
+     data-goal-target-preview-url-value="<%= preview_target_goals_path %>"
+     data-goal-target-preview-currency-value="<%= goal.currency.presence || Current.family.primary_currency_code %>"
+     data-goal-target-preview-pending-text-value="<%= t("goals.form.fields.target_balance_pending") %>">
   <%= styled_form_with model: goal,
                        url: goal.persisted? ? goal_path(goal) : goals_path,
                        method: goal.persisted? ? :patch : :post,
@@ -34,7 +37,7 @@
         <label class="flex items-start gap-2 rounded-lg border border-primary p-3 cursor-pointer has-[:checked]:border-secondary has-[:checked]:bg-surface-inset">
           <%= f.radio_button :kind, kind,
                              class: "radio mt-0.5 shrink-0",
-                             data: { goal_kind_target: "radio", action: "change->goal-kind#refresh change->goal-form#suggestedChanged" } %>
+                             data: { goal_kind_target: "radio", action: "change->goal-kind#refresh change->goal-form#suggestedChanged change->goal-target-preview#refresh" } %>
           <span class="min-w-0">
             <span class="block text-sm font-medium text-primary"><%= t("goals.form.kinds.#{kind}.label") %></span>
             <span class="block text-xs text-secondary"><%= t("goals.form.kinds.#{kind}.hint") %></span>
@@ -62,7 +65,7 @@
       <%= f.select :target_mode,
                    Goal::TARGET_MODES.map { |mode| [ t("goals.form.target_modes.#{mode}"), mode ] },
                    { label: t("goals.form.fields.target_mode") },
-                   data: { goal_kind_target: "modeSelect", action: "change->goal-kind#refresh change->goal-form#amountChanged" } %>
+                   data: { goal_kind_target: "modeSelect", action: "change->goal-kind#refresh change->goal-form#amountChanged change->goal-target-preview#refresh" } %>
     </div>
 
     <div data-goal-kind-target="monthsField" class="hidden">
@@ -70,7 +73,9 @@
                          label: t("goals.form.fields.target_months"),
                          min: 1,
                          step: 1,
-                         placeholder: "6" %>
+                         placeholder: "6",
+                         data: { goal_target_preview_target: "monthsInput",
+                                 action: "input->goal-target-preview#refresh" } %>
       <p class="mt-1 text-xs text-secondary"><%= t("goals.form.fields.target_months_hint") %></p>
       <%# The derived amount has no field of its own to carry an error, so the
           one explaining that the window is empty is shown here — beside the
@@ -111,7 +116,9 @@
             <%= check_box_tag "goal[include_uncategorized_expenses]", "1",
                               goal.include_uncategorized_expenses?,
                               id: "goal_include_uncategorized_expenses",
-                              class: "checkbox checkbox--light shrink-0" %>
+                              class: "checkbox checkbox--light shrink-0",
+                              data: { goal_target_preview_target: "uncategorizedCheckbox",
+                                      action: "change->goal-target-preview#refresh" } %>
             <%= render partial: "categories/badge", locals: { category: Category.uncategorized } %>
           </label>
 
@@ -120,7 +127,9 @@
               <%= check_box_tag "goal[expense_category_ids][]", category.id,
                                 selected_category_ids.include?(category.id.to_s),
                                 id: "goal_expense_category_#{category.id}",
-                                class: "checkbox checkbox--light shrink-0" %>
+                                class: "checkbox checkbox--light shrink-0",
+                                data: { goal_target_preview_target: "categoryCheckbox",
+                                        action: "change->goal-target-preview#refresh" } %>
               <span class="min-w-0 <%= "pl-5" if category.parent_id.present? %>">
                 <%= render partial: "categories/badge", locals: { category: category } %>
               </span>
@@ -147,11 +156,12 @@
           controller leaves the field above in place and this stays hidden. %>
       <div data-goal-kind-target="amountDerived" class="hidden">
         <p class="form-field__label"><%= t("goals.form.fields.target_balance") %></p>
-        <p class="mt-1 text-lg font-medium text-primary tabular-nums privacy-sensitive">
+        <p class="mt-1 text-lg font-medium text-primary tabular-nums privacy-sensitive"
+           data-goal-target-preview-target="output">
           <% if goal.target_amount.to_d.positive? %>
             <%= goal.target_amount_money.format(precision: 0) %>
           <% else %>
-            <span class="text-subdued text-sm font-normal"><%= t("goals.form.fields.target_balance_pending") %></span>
+            <%= t("goals.form.fields.target_balance_pending") %>
           <% end %>
         </p>
         <p class="mt-1 text-xs text-subdued"><%= t("goals.form.fields.target_balance_hint") %></p>

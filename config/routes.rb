@@ -419,6 +419,14 @@ Rails.application.routes.draw do
   end
 
   resources :goals do
+    collection do
+      # Live preview of the months-of-expenses derivation, for a goal that
+      # may not exist yet. Reuses the exact same computation `save` would
+      # run, on an unsaved Goal, so the preview can never disagree with the
+      # real figure.
+      get :preview_target
+    end
+
     member do
       patch :pause
       patch :resume
