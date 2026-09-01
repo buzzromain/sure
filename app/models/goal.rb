@@ -681,6 +681,27 @@ class Goal < ApplicationRecord
   # Only a goal that has actually recorded a spend says anything about it: the
   # overwhelming majority never do, and a permanent "0 used" line would be
   # noise on every card.
+  private
+    # Mirrors GoalPledge#clear_matched_transaction_extra, but a goal can stamp
+    # many transactions where a pledge stamps at most one, so this sweeps every
+    # match rather than looking up a single id.
+    #
+    # Not scoped to `linked_accounts`: an account can be unlinked from the goal
+    # after a consumption stamped a transaction on it (`sync_linked_accounts!`
+    # destroys the `GoalAccount` join, not the stamp), so a transaction marked
+    # by this goal is not guaranteed to live on an account still linked to it.
+    # `consumed_goal_id` is a UUID, unique enough that a family-wide sweep
+    # cannot cross into another goal's stamps.
+    def clear_consumption_stamps
+      Transaction.where("extra @> ?", { goal: { consumed_goal_id: id } }.to_json).find_each do |txn|
+        new_extra = txn.extra.deep_dup
+        new_extra["goal"]&.delete("consumed_goal_id")
+        new_extra.delete("goal") if new_extra["goal"]&.empty?
+        txn.update!(extra: new_extra)
+      end
+    end
+  public
+
   def any_consumption?
     consumed_amount.to_d.positive?
   end
