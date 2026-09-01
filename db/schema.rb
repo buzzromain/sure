@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_28_090000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_01_100000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -1082,8 +1082,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_090000) do
     t.check_constraint "btrim(source_id::text) <> ''::text", name: "chk_import_source_mappings_source_id_present"
     t.check_constraint "btrim(source_type::text) <> ''::text", name: "chk_import_source_mappings_source_type_present"
     t.check_constraint "btrim(target_type::text) <> ''::text", name: "chk_import_source_mappings_target_type_present"
-    t.check_constraint "source_type::text = ANY (ARRAY['Account'::character varying, 'Category'::character varying, 'Tag'::character varying, 'Merchant'::character varying, 'RecurringTransaction'::character varying, 'RecurringOccurrence'::character varying, 'Transaction'::character varying, 'Budget'::character varying, 'Security'::character varying, 'Rule'::character varying]::text[])", name: "chk_import_source_mappings_source_type"
-    t.check_constraint "target_type::text = ANY (ARRAY['Account'::character varying, 'Category'::character varying, 'Tag'::character varying, 'Merchant'::character varying, 'RecurringTransaction'::character varying, 'RecurringOccurrence'::character varying, 'Transaction'::character varying, 'Budget'::character varying, 'Security'::character varying, 'Rule'::character varying]::text[])", name: "chk_import_source_mappings_target_type"
+    t.check_constraint "source_type::text = ANY (ARRAY['Account'::character varying::text, 'Category'::character varying::text, 'Tag'::character varying::text, 'Merchant'::character varying::text, 'RecurringTransaction'::character varying::text, 'RecurringOccurrence'::character varying::text, 'Transaction'::character varying::text, 'Budget'::character varying::text, 'Security'::character varying::text, 'Rule'::character varying::text])", name: "chk_import_source_mappings_source_type"
+    t.check_constraint "target_type::text = ANY (ARRAY['Account'::character varying::text, 'Category'::character varying::text, 'Tag'::character varying::text, 'Merchant'::character varying::text, 'RecurringTransaction'::character varying::text, 'RecurringOccurrence'::character varying::text, 'Transaction'::character varying::text, 'Budget'::character varying::text, 'Security'::character varying::text, 'Rule'::character varying::text])", name: "chk_import_source_mappings_target_type"
   end
 
   create_table "imports", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -1627,6 +1627,27 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_090000) do
     t.index ["plaid_id"], name: "index_plaid_items_on_plaid_id", unique: true
   end
 
+  create_table "pockets", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "account_id", null: false
+    t.decimal "allocated_amount", precision: 19, scale: 4, default: "0.0", null: false
+    t.string "color"
+    t.datetime "created_at", null: false
+    t.string "currency", null: false
+    t.string "description"
+    t.string "fill_direction", default: "inflows", null: false
+    t.string "icon"
+    t.string "name", null: false
+    t.uuid "tag_id"
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "tag_id"], name: "index_pockets_on_account_and_tag_unique", unique: true, where: "(tag_id IS NOT NULL)"
+    t.index ["account_id"], name: "index_pockets_on_account_id"
+    t.index ["tag_id"], name: "index_pockets_on_tag_id"
+    t.check_constraint "allocated_amount >= 0::numeric", name: "chk_pockets_allocated_amount_non_negative"
+    t.check_constraint "btrim(currency::text) <> ''::text", name: "chk_pockets_currency_present"
+    t.check_constraint "btrim(name::text) <> ''::text", name: "chk_pockets_name_present"
+    t.check_constraint "fill_direction::text = ANY (ARRAY['inflows'::character varying::text, 'outflows'::character varying::text, 'both'::character varying::text])", name: "chk_pockets_fill_direction"
+  end
+
   create_table "properties", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.string "area_unit"
     t.integer "area_value"
@@ -1730,7 +1751,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_090000) do
     t.check_constraint "NOT (day_of_month IS NOT NULL AND weekday IS NOT NULL)", name: "chk_recurrence_rules_single_day_spec"
     t.check_constraint "\"interval\" > 0", name: "chk_recurrence_rules_interval_positive"
     t.check_constraint "day_of_month IS NULL OR day_of_month >= '-1'::integer AND day_of_month <= 31 AND day_of_month <> 0", name: "chk_recurrence_rules_day_of_month_range"
-    t.check_constraint "frequency::text = ANY (ARRAY['weekly'::character varying, 'monthly'::character varying, 'yearly'::character varying]::text[])", name: "chk_recurrence_rules_frequency"
+    t.check_constraint "frequency::text = ANY (ARRAY['weekly'::character varying::text, 'monthly'::character varying::text, 'yearly'::character varying::text])", name: "chk_recurrence_rules_frequency"
     t.check_constraint "month_of_year IS NULL OR month_of_year >= 1 AND month_of_year <= 12", name: "chk_recurrence_rules_month_of_year_range"
     t.check_constraint "weekday IS NULL OR weekday >= 0 AND weekday <= 6", name: "chk_recurrence_rules_weekday_range"
     t.check_constraint "weekday_ordinal IS NULL OR weekday IS NOT NULL", name: "chk_recurrence_rules_ordinal_requires_weekday"
@@ -1755,8 +1776,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_090000) do
     t.index ["recurring_occurrence_id", "entry_id"], name: "idx_recurring_allocations_entry_once", unique: true, where: "(entry_id IS NOT NULL)"
     t.index ["recurring_occurrence_id"], name: "index_recurring_allocations_on_recurring_occurrence_id"
     t.check_constraint "allocated_amount > 0::numeric", name: "chk_recurring_allocations_amount_positive"
-    t.check_constraint "source::text = ANY (ARRAY['auto_matched'::character varying, 'user_confirmed'::character varying, 'user_created'::character varying]::text[])", name: "chk_recurring_allocations_source"
-    t.check_constraint "state::text = ANY (ARRAY['suggested'::character varying, 'confirmed'::character varying]::text[])", name: "chk_recurring_allocations_state"
+    t.check_constraint "source::text = ANY (ARRAY['auto_matched'::character varying::text, 'user_confirmed'::character varying::text, 'user_created'::character varying::text])", name: "chk_recurring_allocations_source"
+    t.check_constraint "state::text = ANY (ARRAY['suggested'::character varying::text, 'confirmed'::character varying::text])", name: "chk_recurring_allocations_state"
   end
 
   create_table "recurring_match_rejections", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -1787,8 +1808,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_090000) do
     t.index ["id", "currency"], name: "idx_recurring_occurrences_id_currency", unique: true
     t.index ["recurring_transaction_id", "original_due_on"], name: "idx_recurring_occurrences_identity", unique: true
     t.check_constraint "(status::text = 'scheduled'::text) = (closed_at IS NULL)", name: "chk_recurring_occurrences_closed_state"
-    t.check_constraint "closed_source IS NULL OR (closed_source::text = ANY (ARRAY['auto'::character varying, 'user'::character varying]::text[]))", name: "chk_recurring_occurrences_closed_source"
-    t.check_constraint "status::text = ANY (ARRAY['scheduled'::character varying, 'paid'::character varying, 'skipped'::character varying, 'missed'::character varying]::text[])", name: "chk_recurring_occurrences_status"
+    t.check_constraint "closed_source IS NULL OR (closed_source::text = ANY (ARRAY['auto'::character varying::text, 'user'::character varying::text]))", name: "chk_recurring_occurrences_closed_source"
+    t.check_constraint "status::text = ANY (ARRAY['scheduled'::character varying::text, 'paid'::character varying::text, 'skipped'::character varying::text, 'missed'::character varying::text])", name: "chk_recurring_occurrences_status"
   end
 
   create_table "recurring_price_changes", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -2651,6 +2672,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_090000) do
   add_foreign_key "onchain_wallet_items", "families"
   add_foreign_key "plaid_accounts", "plaid_items"
   add_foreign_key "plaid_items", "families"
+  add_foreign_key "pockets", "accounts"
+  add_foreign_key "pockets", "tags"
   add_foreign_key "push_subscriptions", "users"
   add_foreign_key "questrade_accounts", "questrade_items"
   add_foreign_key "questrade_items", "families"

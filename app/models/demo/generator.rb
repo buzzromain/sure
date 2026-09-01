@@ -105,6 +105,7 @@ class Demo::Generator
 
       puts "🎯 Seeding goals..."
       generate_goals!(family)
+      generate_pockets!(family)
 
       puts "🔑 Creating monitoring API key..."
       create_monitoring_api_key!(family)
@@ -1485,5 +1486,43 @@ class Demo::Generator
       new_extra = (txn.extra || {}).deep_dup
       new_extra["goal"] = (new_extra["goal"] || {}).merge("pledge_id" => pledge.id)
       txn.update!(extra: new_extra)
+    end
+
+    # Pockets on the primary checking account: one manual envelope, one
+    # tag-linked outflow pocket, one tag-linked inflow pocket.
+    def generate_pockets!(family)
+      depository_accounts = family.accounts
+                                  .where(accountable_type: "Depository")
+                                  .visible
+                                  .order(:created_at, :id)
+                                  .to_a
+      return if depository_accounts.empty?
+
+      account = depository_accounts.first
+      return unless account.depository?
+
+      restaurant_tag = family.tags.find_or_create_by!(name: "Restaurant") { |t| t.color = "#DB5A54" }
+      side_gig_tag = family.tags.find_or_create_by!(name: "Side gig") { |t| t.color = "#4DA568" }
+
+      Pocket.create!(account: account, name: "Emergency Fund", currency: account.currency,
+                     allocated_amount: 5_000, color: Pocket::COLORS.first)
+
+      Pocket.create!(account: account, name: "Restaurants", currency: account.currency,
+                     allocated_amount: 0, tag: restaurant_tag, fill_direction: "outflows")
+
+      Pocket.create!(account: account, name: "Side gig savings", currency: account.currency,
+                     allocated_amount: 0, tag: side_gig_tag, fill_direction: "inflows")
+
+      Entry.where(account_id: account.id, entryable_type: "Transaction")
+           .where("entries.amount > 0")
+           .order(date: :desc).limit(4)
+           .each { |e| e.entryable.tags << restaurant_tag unless e.entryable.tags.include?(restaurant_tag) }
+
+      Entry.where(account_id: account.id, entryable_type: "Transaction")
+           .where("entries.amount < 0")
+           .order(date: :desc).limit(2)
+           .each { |e| e.entryable.tags << side_gig_tag unless e.entryable.tags.include?(side_gig_tag) }
+
+      puts "   ✅ Seeded 3 pockets on #{account.name}"
     end
 end

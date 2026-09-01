@@ -28,6 +28,7 @@ class Account < ApplicationRecord
   has_many :goal_accounts, dependent: :destroy
   has_many :goals, through: :goal_accounts
   has_many :goal_pledges, dependent: :destroy
+  has_many :pockets, dependent: :destroy
   # Inverse for recurring transfers where this account is the destination.
   # Account#recurring_transactions only matches account_id; without this
   # association, destroying the destination account would hit the FK
@@ -517,6 +518,14 @@ class Account < ApplicationRecord
   # Budget#available_to_allocate.
   def free_to_earmark
     balance.to_d - goal_earmarked_total
+  end
+
+  def free_balance(pockets_total = pockets.sum(:allocated_amount))
+    balance.to_d - pockets_total.to_d
+  end
+
+  def pockets_overflow?(pockets_total = pockets.sum(:allocated_amount))
+    free_balance(pockets_total).negative?
   end
 
   def logo_url
