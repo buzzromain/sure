@@ -603,6 +603,13 @@ Rails.application.routes.draw do
     resources :pockets, only: %i[index new create edit update destroy], shallow: false
   end
 
+  # Composition sketch (PR #2892 discussion): entry point for attaching a
+  # goal to an existing pocket — a goal keeps target/pace/multi-account
+  # pooling, but can back onto one pocket instead of accounts.
+  resources :pockets, only: [] do
+    resource :goal, only: %i[new create], controller: "pocket_goals"
+  end
+
   resources :account_statements, only: %i[index show create update destroy] do
     member do
       patch :link

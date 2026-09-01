@@ -3,7 +3,6 @@ class PocketsController < ApplicationController
   before_action :require_depository_account
   before_action :require_manage_account, only: %i[new create edit update destroy]
   before_action :set_pocket, only: %i[edit update destroy]
-  before_action :set_available_tags, only: %i[new create edit update]
 
   def index
     redirect_to account_path(@account, tab: :pockets)
@@ -84,19 +83,17 @@ class PocketsController < ApplicationController
       @pocket = @account.pockets.find(params[:id])
     end
 
-    def set_available_tags
-      already_linked_tag_ids = @account.pockets.where.not(tag_id: nil).pluck(:tag_id)
-      already_linked_tag_ids -= [ @pocket&.tag_id ].compact
-
-      @available_tags = Current.family.tags
-        .alphabetically
-        .where.not(id: already_linked_tag_ids)
-    end
-
     def pocket_params
-      permitted = params.require(:pocket).permit(:name, :description, :allocated_amount, :tag_id, :fill_direction, :color, :icon)
-      # When a tag drives auto-fill, the amount is computed from transactions — ignore any manual input
-      final_tag_id = permitted.key?(:tag_id) ? permitted[:tag_id].presence : @pocket&.tag_id
-      final_tag_id.present? ? permitted.except(:allocated_amount) : permitted
+      permitted = params.require(:pocket).permit(:name, :description, :allocated_amount, :fill_direction,
+                                                   :color, :icon, :link_new_tag)
+      permitted[:link_new_tag] = ActiveModel::Type::Boolean.new.cast(permitted[:link_new_tag])
+
+      # When a tag drives auto-fill, the amount is computed from transactions
+      # — ignore any manual input for it, same reasoning as Goal's own form.
+      if permitted[:link_new_tag] || @pocket&.tag_id.present?
+        permitted.except(:allocated_amount)
+      else
+        permitted
+      end
     end
 end

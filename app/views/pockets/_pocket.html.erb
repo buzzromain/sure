@@ -3,6 +3,7 @@
 <% color = pocket.display_color %>
 <% pocket_icon = pocket.display_icon %>
 <% percent = pocket.allocation_percent(account.balance) %>
+<% goal = pocket.goal %>
 
 <div class="bg-container rounded-xl shadow-border-xs flex flex-col group relative overflow-hidden">
 
@@ -48,8 +49,27 @@
       <%= format_money pocket.allocated_amount_money %>
     </p>
 
-    <%= render DS::ProgressRing.new(percent: percent, size: 56, stroke_width: 3.5) %>
+    <% if goal %>
+      <%= render Goals::ProgressRingComponent.new(goal: goal, size: 56) %>
+    <% else %>
+      <%= render DS::ProgressRing.new(percent: percent, size: 56, stroke_width: 3.5) %>
+    <% end %>
   </div>
+
+  <%# ── Goal section: a target-bearing trajectory sitting on top of this
+      envelope. Composition, not a merge — the pocket keeps filling itself
+      from its tag exactly as it does without a goal; the goal only reads
+      allocated_amount, it never writes it. ── %>
+  <% if goal %>
+    <div class="px-4 py-2.5 border-t border-primary bg-container-inset flex items-center justify-between gap-2">
+      <p class="text-xs text-secondary truncate">
+        <%= t("pockets.pocket.goal_progress",
+              amount: format_money(goal.target_amount_money),
+              status: t("pockets.pocket.goal_status.#{goal.status}", default: goal.status.to_s.humanize)) %>
+      </p>
+      <%= render DS::Link.new(variant: "ghost", text: t("pockets.pocket.view_goal"), href: goal_path(goal), frame: :_top) %>
+    </div>
+  <% end %>
 
   <%# ── Footer ── %>
   <div class="px-4 py-3 border-t border-primary flex items-center justify-between gap-2">
@@ -69,6 +89,16 @@
           href: transactions_path(q: { tags: [ pocket.tag.name ], accounts: [ account.name ] }),
           aria: { label: t("pockets.pocket.view_transactions") },
           frame: :_top
+        ) %>
+      <% end %>
+
+      <% unless goal %>
+        <%= render DS::Link.new(
+          variant: "ghost",
+          icon: "target",
+          href: new_pocket_goal_path(pocket),
+          aria: { label: t("pockets.pocket.add_goal") },
+          frame: :modal
         ) %>
       <% end %>
 

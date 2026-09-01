@@ -1,6 +1,6 @@
 <%# locals: (account:) %>
 
-<% pockets = account.pockets.includes(:tag).order(:name).to_a %>
+<% pockets = account.pockets.includes(:tag, :goal).order(:name).to_a %>
 <% pockets_total = pockets.sum(&:allocated_amount) %>
 <% overflow = account.pockets_overflow?(pockets_total) %>
 <% account_balance = account.balance.to_f %>

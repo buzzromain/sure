@@ -26,6 +26,13 @@ class Goal < ApplicationRecord
   validates :color, format: { with: /\A#[0-9A-Fa-f]{6}\z/ }, allow_nil: true
 
   belongs_to :family
+  # Composition sketch (PR #2892 discussion): a goal can optionally back onto
+  # a single Pocket instead of accounts. When it does, the goal never needs
+  # its own tracking tag or consume!/WithdrawalDetector machinery — Pocket
+  # already owns the tag and the attribution; the goal just reads
+  # pocket.allocated_amount as its balance.
+  belongs_to :pocket, optional: true
+  validates :pocket_id, uniqueness: true, allow_nil: true
   # autosave so earmark (allocated_amount) edits on already-linked accounts
   # persist through goal.save! — without it Rails only saves newly built
   # children, silently dropping changes to existing goal_accounts.
@@ -419,6 +426,7 @@ class Goal < ApplicationRecord
     # completed has no frozen amount and keeps the live calculation. Both
     # shapes coexist in the database.
     return completed_amount.to_d if completed_amount.present?
+    return pocket.allocated_amount.to_d if pocket_id.present?
 
     @current_balance ||= begin
       matching = linked_accounts.select { |a| a.currency == currency }
@@ -1513,6 +1521,7 @@ class Goal < ApplicationRecord
     end
 
     def must_have_at_least_one_linked_account
+      return if pocket_id.present?
       return unless goal_accounts.reject(&:marked_for_destruction?).empty?
 
       errors.add(:base, :at_least_one_linked_account_required)

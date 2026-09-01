@@ -3,15 +3,25 @@ class Pocket < ApplicationRecord
 
   belongs_to :account
   belongs_to :tag, optional: true
+  has_one :goal, dependent: :nullify
 
   enum :fill_direction, { inflows: "inflows", outflows: "outflows", both: "both" }, default: :inflows
 
   validates :name, :currency, presence: true
   validate :account_must_be_depository
   validates :allocated_amount, numericality: { greater_than_or_equal_to: 0 }
-  validates :tag_id, uniqueness: { scope: :account_id, allow_nil: true }
   validate :total_pockets_within_account_balance
   validate :tag_belongs_to_same_family
+
+  # Composition sketch (PR #2892 discussion): same reasoning as Goal's own
+  # tracking tag — a free choice among the family's existing tags risks
+  # landing on one already used for something else, silently backdating
+  # every past transaction under it into this pocket's total. `link_new_tag`
+  # is a form flag ("auto-fill from a tag"), never a tag picker: when set,
+  # the pocket generates and owns a dedicated tag instead of being handed one.
+  attr_accessor :link_new_tag
+  after_create :ensure_tracking_tag, if: :link_new_tag
+  before_save :sync_tracking_tag_name, if: :will_save_change_to_name?
 
   after_save :sync_from_tag, if: -> { saved_change_to_tag_id? || saved_change_to_fill_direction? }
 
@@ -67,6 +77,20 @@ class Pocket < ApplicationRecord
   end
 
   private
+
+    def ensure_tracking_tag
+      generated = account.family.tags.find_or_create_by!(name: "pockets:#{name}") do |t|
+        t.color = Tag::COLORS.sample
+      end
+      update_column(:tag_id, generated.id)
+    end
+
+    def sync_tracking_tag_name
+      return unless tag_id.present?
+      return if account.family.tags.where.not(id: tag_id).exists?(name: "pockets:#{name}")
+
+      tag.update_column(:name, "pockets:#{name}")
+    end
 
     def sync_from_tag
       _, new_tag_id = saved_change_to_tag_id || [ nil, tag_id ]

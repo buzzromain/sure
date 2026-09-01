@@ -176,7 +176,15 @@
         ) %>
   </section>
 
-  <% if @goal.linked_accounts.any? %>
+  <% if @goal.pocket.present? %>
+    <%= render DS::Card.new do %>
+      <h2 class="text-sm font-medium text-primary mb-2"><%= t(".backed_by_pocket") %></h2>
+      <div class="flex items-center justify-between gap-3">
+        <p class="text-sm text-secondary"><%= @goal.pocket.name %> · <%= @goal.pocket.account.name %></p>
+        <%= render DS::Link.new(text: t(".view_pocket"), href: account_path(@goal.pocket.account, tab: :pockets), frame: :_top) %>
+      </div>
+    <% end %>
+  <% elsif @goal.linked_accounts.any? %>
     <%= render DS::Card.new do %>
       <%= render Goals::FundingAccountsBreakdownComponent.new(goal: @goal) %>
     <% end %>

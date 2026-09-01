@@ -6,7 +6,12 @@ class Transaction < ApplicationRecord
   belongs_to :transfer, optional: true
 
   has_many :taggings, as: :taggable, dependent: :destroy
-  has_many :tags, through: :taggings
+  # after_add/after_remove, not Tagging's own create/destroy callbacks —
+  # `transaction.tag_ids = [...]` (how the tag picker and every controller
+  # actually remove a tag) replaces the join rows with a bulk DELETE that
+  # skips Tagging's own AR callbacks entirely. These collection callbacks are
+  # the one hook Rails fires on every removal path, whichever SQL it took.
+  has_many :tags, through: :taggings, after_add: :fill_linked_pocket, after_remove: :unfill_linked_pocket
 
   # File attachments (receipts, invoices, etc.) using Active Storage
   # Supports images (JPEG, PNG, GIF, WebP) and PDFs up to 10MB each
@@ -407,5 +412,24 @@ class Transaction < ApplicationRecord
       return unless family
 
       FamilyMerchantAssociation.where(family: family, merchant: merchant).delete_all
+    end
+
+    # A pocket's allocated_amount is a full recompute from its tagged
+    # transactions (Pocket#recompute_from_tag!), not an incrementally
+    # adjusted balance — so a tag add/remove just asks the pocket to redo the
+    # aggregate, rather than trying to apply a signed delta here.
+    def fill_linked_pocket(tag)
+      pocket = Pocket.find_by(tag_id: tag.id)
+      return unless pocket && entry
+      return unless pocket.account_id == entry.account_id
+
+      pocket.recompute_from_tag!
+    end
+
+    def unfill_linked_pocket(tag)
+      pocket = Pocket.find_by(tag_id: tag.id)
+      return unless pocket
+
+      pocket.recompute_from_tag!
     end
 end
