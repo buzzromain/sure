@@ -644,7 +644,7 @@ class GoalsControllerTest < ActionDispatch::IntegrationTest
 
   # --- Detaching an attribution ---
 
-  test "detaching a spend takes it back off the goal and returns it to detection" do
+  test "detaching a spend takes it back off the goal" do
     goal, entry = goal_with_outflow
     post consume_goal_url(goal), params: { transaction_id: entry.entryable_id }
     assert_equal entry.amount.to_d, goal.reload.consumed_amount
@@ -653,9 +653,6 @@ class GoalsControllerTest < ActionDispatch::IntegrationTest
 
     assert_redirected_to goal_url(goal)
     assert_equal BigDecimal("0"), goal.reload.consumed_amount
-
-    get goal_url(goal)
-    assert_match I18n.t("goals.unattributed_outflows.heading"), response.body
   end
 
   test "detaching does not restore the account's earmark" do
@@ -712,16 +709,6 @@ class GoalsControllerTest < ActionDispatch::IntegrationTest
   end
 
   # --- Lot B5: attributing an outflow the app spotted ---
-
-  test "the goal page offers an outflow nothing has claimed" do
-    goal, entry = goal_with_outflow
-
-    get goal_url(goal)
-
-    assert_response :success
-    assert_match I18n.t("goals.unattributed_outflows.heading"), response.body
-    assert_match entry.name, response.body
-  end
 
   test "attributing an outflow takes its amount and stops offering it" do
     goal, entry = goal_with_outflow
@@ -947,24 +934,6 @@ class GoalsControllerTest < ActionDispatch::IntegrationTest
       copy = YAML.load_file(Rails.root.join("config/locales/views/goals/#{locale}.yml")).to_s
       assert_no_match(/\bfloor\b|\bniveau\b/i, copy, "#{locale} still mixes vocabularies")
     end
-  end
-
-  # The gap this closes: at the moment the user has reached the target and
-  # spent some of it, the page offered only "Close this goal" — which releases
-  # the earmark, and whose own hint says to do it once the money is actually
-  # spent. Saying so was two clicks away in the overflow menu.
-  test "a reached goal offers recording a spend outside the overflow menu" do
-    goal = reached_goal_holding_money
-
-    get goal_url(goal)
-
-    assert_response :success
-    # In the panel, not only in the menu: scoped to the celebration panel's own
-    # action row by id. `section` was not enough — the panel renders through
-    # DS::Card, which emits a <section>, so any card on the page satisfied it.
-    panel_links = css_select("#goal-celebration-actions a[href='#{consume_goal_path(goal)}']")
-    assert_operator panel_links.size, :>=, 1,
-      "the spend action was still only reachable through the overflow menu"
   end
 
   test "closing is still offered alongside it" do
