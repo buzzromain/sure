@@ -63,6 +63,9 @@ fr:
         name_placeholder: Fonds d'urgence, Apport maison…
         notes: Notes (facultatif)
         notes_placeholder: Un rappel pour plus tard…
+        tag_pending: Créé automatiquement à l'enregistrement
+        tag_hint: "Taguez une transaction sur un compte lié avec cette étiquette pour qu'elle compte automatiquement pour cet objectif. Retirer le tag annule l'attribution."
+        tag_hint_no_earmark: "Cette réserve est adossée au solde entier du compte, qui bouge déjà avec chaque transaction. Donnez-lui un montant précis ci-dessous pour pouvoir taguer des transactions à la place."
         target_amount: Montant cible
         target_balance: "Solde cible"
         expense_categories: Catégories prises en compte
@@ -194,10 +197,15 @@ fr:
         other: "+%{count} de plus dans Transactions"
       open_in_transactions: Ouvrir dans Transactions
       summary: "%{total} utilisés · %{listed} sur %{transactions}"
+      summary_compact: "%{total} utilisés sur %{transactions}"
       transactions:
         one: 1 opération
         other: "%{count} opérations"
       unaccounted: "· %{amount} enregistrés sans opération"
+      tag_hint: "Le tag %{tag} sur un compte lié compte ici automatiquement."
+      reserve_tracks_automatically: "Cette réserve est adossée au solde entier du compte, qui bouge déjà avec chaque transaction — rien à taguer."
+      no_tag_hint: Rien d'enregistré pour l'instant.
+      empty: Rien d'enregistré pour l'instant.
     show:
       archive: Archiver
       archived_banner:

@@ -886,6 +886,23 @@ class Goal < ApplicationRecord
     consumed_amount.to_d.positive?
   end
 
+  # Whether this goal's own tag currently does anything if applied to a
+  # transaction. A one-off goal's always does — consume! only refuses on
+  # state or target, never on how the link is shaped. A reserve's only moves
+  # a FIXED earmark (adjust_reserve!); a whole-account link has no earmark to
+  # move, its backing already IS the account balance and tracks itself. A
+  # reserve split across several accounts is actionable if any one of them
+  # has an earmark, even if others don't.
+  #
+  # The UI reads this before inviting anyone to tag: a hint promising
+  # something the app would then silently refuse is worse than no hint.
+  def tag_actionable?
+    return false if tag_id.blank?
+    return true if one_off?
+
+    goal_accounts.any? { |ga| ga.allocated_amount.present? }
+  end
+
   private
     # Mirrors GoalPledge#clear_matched_transaction_extra, but a goal can stamp
     # many transactions where a pledge stamps at most one, so this sweeps every

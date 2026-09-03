@@ -189,7 +189,16 @@
           <span class="text-secondary"><%= t("goals.form.fields.tag_pending") %></span>
         <% end %>
       </p>
-      <p class="mt-1 text-xs text-secondary"><%= t("goals.form.fields.tag_hint") %></p>
+      <%# Only a persisted goal has funding accounts to check — a new one's
+          are still unsaved choices in this same form, so tag_actionable?
+          would read a config that isn't final yet. The generic hint stays
+          for both that case and every one-off goal, which is always
+          actionable regardless of how its accounts are linked. %>
+      <% if goal.persisted? && goal.maintained? && !goal.tag_actionable? %>
+        <p class="mt-1 text-xs text-secondary"><%= t("goals.form.fields.tag_hint_no_earmark") %></p>
+      <% else %>
+        <p class="mt-1 text-xs text-secondary"><%= t("goals.form.fields.tag_hint") %></p>
+      <% end %>
     </div>
 
     <div>

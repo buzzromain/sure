@@ -31,9 +31,15 @@
           </p>
         <% end %>
         <p class="text-xs text-secondary flex items-center gap-1 truncate">
-          <% if goal.tag %>
+          <%# A reserve backed by a whole account already tracks itself —
+              inviting a tag there would promise something consume!/
+              adjust_reserve! then silently refuses. tag_actionable? knows
+              the difference; no_tag_hint is only for the tagless case. %>
+          <% if goal.tag_actionable? %>
             <%= icon("zap", size: "xs", class: "text-warning shrink-0") %>
             <span class="truncate"><%= t("goals.consumed_outflows.tag_hint", tag: goal.tag.name) %></span>
+          <% elsif goal.tag %>
+            <span class="truncate"><%= t("goals.consumed_outflows.reserve_tracks_automatically") %></span>
           <% else %>
             <span><%= t("goals.consumed_outflows.no_tag_hint") %></span>
           <% end %>

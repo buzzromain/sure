@@ -110,6 +110,42 @@ class GoalReserveAdjustmentTest < ActiveSupport::TestCase
     assert_raises(Goal::ConsumptionRefused) { reserve.release_reserve_adjustment!(entry.entryable) }
   end
 
+  # --- tag_actionable? ---
+
+  test "a one-off goal's tag is always actionable" do
+    account = Account.create!(family: @family, accountable: Depository.new, name: "Trip Pot", currency: "USD", balance: 5_000)
+    goal = @family.goals.create!(name: "Trip", target_amount: 5_000, currency: "USD") do |g|
+      g.goal_accounts.build(account: account) # whole-account link, still one-off
+    end
+
+    assert goal.tag_actionable?
+  end
+
+  test "a reserve on a fixed earmark is actionable" do
+    reserve, _account = reserve_with_earmark(earmark: 1_000, balance: 5_000)
+    assert reserve.tag_actionable?
+  end
+
+  test "a reserve on a whole-account link is not actionable" do
+    account = Account.create!(family: @family, accountable: Depository.new, name: "Whole Pot", currency: "USD", balance: 5_000)
+    reserve = @family.goals.create!(name: "Reserve", target_amount: 5_000, currency: "USD", kind: "maintained") do |g|
+      g.goal_accounts.build(account: account)
+    end
+
+    assert_not reserve.tag_actionable?
+  end
+
+  test "a reserve is actionable if any one of several linked accounts carries an earmark" do
+    whole = Account.create!(family: @family, accountable: Depository.new, name: "Whole Pot", currency: "USD", balance: 5_000)
+    earmarked = Account.create!(family: @family, accountable: Depository.new, name: "Shared Pot", currency: "USD", balance: 2_000)
+    reserve = @family.goals.create!(name: "Reserve", target_amount: 5_000, currency: "USD", kind: "maintained") do |g|
+      g.goal_accounts.build(account: whole)
+      g.goal_accounts.build(account: earmarked, allocated_amount: 500)
+    end
+
+    assert reserve.tag_actionable?
+  end
+
   # --- via the tag callback, end to end ---
 
   test "tagging a spend draws the reserve down; untagging restores it" do

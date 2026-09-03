@@ -112,6 +112,7 @@ en:
         other: "%{count} transactions"
       unaccounted: "· %{amount} recorded without a transaction"
       tag_hint: "Tagged %{tag} on a linked account counts here automatically."
+      reserve_tracks_automatically: This reserve is backed by the account's whole balance, which already moves with every transaction — nothing to tag.
       no_tag_hint: Nothing recorded yet.
       empty: Nothing recorded yet.
     show:
@@ -328,6 +329,7 @@ en:
         notes_placeholder: A reminder for future you…
         tag_pending: Created automatically when you save
         tag_hint: Tag a transaction on a linked account with this label to count it toward this goal automatically. Removing the tag undoes it.
+        tag_hint_no_earmark: This reserve is backed by the account's whole balance, which already moves with every transaction. Give it a specific amount below to tag transactions against it instead.
         funding_accounts: Funding accounts
         funding_accounts_hint: This goal's balance is the balance (or earmarked portion) of these accounts.
         whole_balance: Whole balance
