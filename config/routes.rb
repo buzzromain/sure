@@ -600,7 +600,12 @@ Rails.application.routes.draw do
     end
 
     resource :sharing, only: [ :show, :update ], controller: "account_sharings"
-    resources :pockets, only: %i[index new create edit update destroy], shallow: false
+    resources :pockets, only: %i[index new create edit update destroy], shallow: false do
+      member do
+        get :move
+        post :move, action: :create_movement, as: nil
+      end
+    end
   end
 
   # Composition sketch (PR #2892 discussion): entry point for attaching a

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_01_110000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_03_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -1629,6 +1629,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_01_110000) do
     t.index ["plaid_id"], name: "index_plaid_items_on_plaid_id", unique: true
   end
 
+  create_table "pocket_movements", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.decimal "amount", precision: 19, scale: 4, null: false
+    t.datetime "created_at", null: false
+    t.string "note"
+    t.uuid "pocket_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["pocket_id"], name: "index_pocket_movements_on_pocket_id"
+    t.check_constraint "amount <> 0::numeric", name: "chk_pocket_movements_amount_not_zero"
+  end
+
   create_table "pockets", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "account_id", null: false
     t.decimal "allocated_amount", precision: 19, scale: 4, default: "0.0", null: false
@@ -2675,6 +2685,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_01_110000) do
   add_foreign_key "onchain_wallet_items", "families"
   add_foreign_key "plaid_accounts", "plaid_items"
   add_foreign_key "plaid_items", "families"
+  add_foreign_key "pocket_movements", "pockets"
   add_foreign_key "pockets", "accounts"
   add_foreign_key "pockets", "tags"
   add_foreign_key "push_subscriptions", "users"

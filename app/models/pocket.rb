@@ -4,6 +4,19 @@ class Pocket < ApplicationRecord
   belongs_to :account
   belongs_to :tag, optional: true
   has_one :goal, dependent: :nullify
+  # Ordered explicitly: the primary key is a UUID, so insertion order isn't
+  # recoverable from it the way it would be from a serial id — an unordered
+  # .last here is a coin flip, not "the most recent movement".
+  has_many :movements, -> { order(:created_at) }, class_name: "PocketMovement", dependent: :destroy
+
+  class MovementRefused < StandardError
+    attr_reader :reason
+
+    def initialize(reason)
+      @reason = reason
+      super("pocket movement refused: #{reason}")
+    end
+  end
 
   enum :fill_direction, { inflows: "inflows", outflows: "outflows", both: "both" }, default: :inflows
 
@@ -21,6 +34,17 @@ class Pocket < ApplicationRecord
   # the pocket generates and owns a dedicated tag instead of being handed one.
   attr_accessor :link_new_tag
   after_create :ensure_tracking_tag, if: :link_new_tag
+
+  # recompute! treats the sum of movements as the whole non-tag story, so a
+  # starting balance that never became a movement would vanish the moment
+  # anything (a tag event, an add/withdraw) asked for a recompute. These two
+  # keep that sum honest: one seeds the amount a manual pocket is born with,
+  # the other logs a direct edit to allocated_amount as the delta it is —
+  # neither fires for a tag-linked pocket, whose amount recompute! (via
+  # sync_from_tag/the tag total) owns outright.
+  after_create :seed_initial_movement, if: -> { allocated_amount.to_d.positive? && !link_new_tag }
+  after_update :seed_movement_for_direct_edit, if: -> { saved_change_to_allocated_amount? && !tag_id.present? }
+
   before_save :sync_tracking_tag_name, if: :will_save_change_to_name?
 
   after_save :sync_from_tag, if: -> { saved_change_to_tag_id? || saved_change_to_fill_direction? }
@@ -48,32 +72,86 @@ class Pocket < ApplicationRecord
     [ (allocated_amount / balance.to_f * 100).round, 100 ].min
   end
 
-  def recompute_from_tag!
-    return unless tag_id.present?
-    update_column(:allocated_amount, tagged_transaction_total(tag_id))
+  # The pocket's true balance, always fully derived rather than incrementally
+  # tracked: the sum of every explicit add/withdraw gesture, plus whatever
+  # the auto-fill tag currently totals (0 if there is none). Two independent
+  # sources, recomputed together on every call — same reasoning tag-fill
+  # already used update_column and a full re-sum for: incrementally applying
+  # deltas from two different mechanisms is exactly where the two can drift
+  # apart from each other.
+  def recompute!
+    total = manual_movement_total
+    total += tagged_transaction_total(tag_id) if tag_id.present?
+    update_column(:allocated_amount, total)
   end
 
-  # Full recompute (via recompute_from_tag!) rather than an incremental adjust_by:
+  def manual_movement_total
+    movements.sum(:amount)
+  end
+
+  # Full recompute (via recompute!) rather than an incremental adjust_by:
   # incrementally adding/subtracting per-tagging deltas can diverge from the aggregate
   # for fill_direction "both" (each step clamps at 0, whereas the aggregate only floors
   # the net total at 0 — order of tagging/untagging can then produce different results).
-  # recompute_from_tag! uses update_column, same as increment!/decrement! did, so it
+  # recompute! uses update_column, same as increment!/decrement! did, so it
   # still skips AR callbacks/validations and avoids re-triggering the Tagging callbacks
   # that called these methods.
   def apply_tagging(tagging)
     delta = tagging_transaction_delta(tagging)
     return unless delta
 
-    recompute_from_tag!
+    recompute!
   end
 
   # Must run after the Tagging row is actually deleted (see Tagging#unfill_linked_pocket,
-  # registered as after_destroy) so the aggregate query in recompute_from_tag! excludes it.
+  # registered as after_destroy) so the aggregate query in recompute! excludes it.
   def reverse_tagging(tagging)
     delta = tagging_transaction_delta(tagging)
     return unless delta
 
-    recompute_from_tag!
+    recompute!
+  end
+
+  # The explicit-transfer counterpart to tag-fill: a deliberate "move this
+  # much in" gesture, not tied to any transaction. Capped at what the
+  # account actually has free across every pocket, same ceiling
+  # total_pockets_within_account_balance already enforces on a direct edit —
+  # recompute! writes via update_column and skips that validation, so it is
+  # checked explicitly here instead.
+  def add_money!(amount, note: nil)
+    amount = amount.to_d
+    raise MovementRefused.new(:non_positive) unless amount.positive?
+
+    with_lock do
+      others_total = account.pockets.where.not(id: id).sum(:allocated_amount)
+      room = account.balance.to_d - others_total
+      raise MovementRefused.new(:exceeds_account_balance) if allocated_amount.to_d + amount > room
+
+      movements.create!(amount: amount, note: note)
+      recompute!
+    end
+
+    reload
+    self
+  end
+
+  # The withdraw side of add_money!. Refused past what the pocket actually
+  # holds — same "refuse rather than clamp" reasoning Goal's consume! uses:
+  # clamping would silently disagree with what the movement history says
+  # happened.
+  def withdraw_money!(amount, note: nil)
+    amount = amount.to_d
+    raise MovementRefused.new(:non_positive) unless amount.positive?
+
+    with_lock do
+      raise MovementRefused.new(:exceeds_balance) if amount > allocated_amount.to_d
+
+      movements.create!(amount: -amount, note: note)
+      recompute!
+    end
+
+    reload
+    self
   end
 
   private
@@ -83,6 +161,18 @@ class Pocket < ApplicationRecord
         t.color = Tag::COLORS.sample
       end
       update_column(:tag_id, generated.id)
+    end
+
+    def seed_initial_movement
+      movements.create!(amount: allocated_amount)
+    end
+
+    def seed_movement_for_direct_edit
+      old_amount, new_amount = saved_change_to_allocated_amount
+      delta = new_amount.to_d - old_amount.to_d
+      return if delta.zero?
+
+      movements.create!(amount: delta)
     end
 
     def sync_tracking_tag_name

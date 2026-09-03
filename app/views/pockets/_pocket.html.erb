@@ -92,6 +92,14 @@
         ) %>
       <% end %>
 
+      <%= render DS::Link.new(
+        variant: "ghost",
+        icon: "arrow-left-right",
+        href: move_account_pocket_path(account, pocket),
+        aria: { label: t("pockets.pocket.move_money") },
+        frame: :modal
+      ) %>
+
       <% unless goal %>
         <%= render DS::Link.new(
           variant: "ghost",

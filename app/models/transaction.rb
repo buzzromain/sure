@@ -415,21 +415,22 @@ class Transaction < ApplicationRecord
     end
 
     # A pocket's allocated_amount is a full recompute from its tagged
-    # transactions (Pocket#recompute_from_tag!), not an incrementally
-    # adjusted balance — so a tag add/remove just asks the pocket to redo the
-    # aggregate, rather than trying to apply a signed delta here.
+    # transactions plus its manual movements (Pocket#recompute!), not an
+    # incrementally adjusted balance — so a tag add/remove just asks the
+    # pocket to redo the aggregate, rather than trying to apply a signed
+    # delta here.
     def fill_linked_pocket(tag)
       pocket = Pocket.find_by(tag_id: tag.id)
       return unless pocket && entry
       return unless pocket.account_id == entry.account_id
 
-      pocket.recompute_from_tag!
+      pocket.recompute!
     end
 
     def unfill_linked_pocket(tag)
       pocket = Pocket.find_by(tag_id: tag.id)
       return unless pocket
 
-      pocket.recompute_from_tag!
+      pocket.recompute!
     end
 end

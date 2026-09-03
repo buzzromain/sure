@@ -34,6 +34,7 @@ en:
       auto_fills_from: "Auto-fills from \"%{tag}\""
       no_auto_fill: "No auto-fill linked"
       view_transactions: "View tagged transactions"
+      move_money: "Move money"
       add_goal: "Add a goal"
       view_goal: "View goal"
       goal_progress: "Goal: %{amount} · %{status}"
@@ -54,6 +55,21 @@ en:
         title: "Add a goal to this pocket"
       create:
         success: "Goal linked to pocket."
+    move:
+      title: "Move money · %{name}"
+      add_tab: "Add"
+      withdraw_tab: "Withdraw"
+      amount_label: "Amount"
+      note_label: "Note (optional)"
+      note_placeholder: "e.g. Moved from checking"
+      current_balance: "Currently holding %{amount}"
+      submit: "Move money"
+      add_success: "%{amount} added."
+      withdraw_success: "%{amount} withdrawn."
+      errors:
+        non_positive: "Enter an amount greater than zero."
+        exceeds_balance: "That is more than this pocket currently holds."
+        exceeds_account_balance: "That would allocate more than this account actually has free."
     create:
       success: "Pocket created."
     update:
