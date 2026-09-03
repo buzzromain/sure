@@ -1,0 +1,44 @@
+<%# The explicit-transfer counterpart to tag-fill: "move this much in/out
+    right now", not tied to any transaction — closer to how a neobank
+    Vault/Pot/Space actually works. %>
+<%= render DS::Dialog.new do |dialog| %>
+  <% dialog.with_header(title: t(".title", name: @pocket.name)) %>
+  <% dialog.with_body do %>
+    <%= styled_form_with model: @pocket.movements.build, url: move_account_pocket_path(@account, @pocket), method: :post, class: "space-y-4" do |f| %>
+      <div class="grid grid-cols-2 gap-2 p-1 bg-surface-inset rounded-lg">
+        <label class="cursor-pointer">
+          <input type="radio" name="direction" value="add" class="peer sr-only"
+                 <%= "checked" if @direction == "add" %> />
+          <div class="text-center py-2 rounded-md text-sm font-medium text-secondary peer-checked:bg-container peer-checked:text-primary peer-checked:shadow-border-xs">
+            <%= t(".add_tab") %>
+          </div>
+        </label>
+        <label class="cursor-pointer">
+          <input type="radio" name="direction" value="withdraw" class="peer sr-only"
+                 <%= "checked" if @direction == "withdraw" %> />
+          <div class="text-center py-2 rounded-md text-sm font-medium text-secondary peer-checked:bg-container peer-checked:text-primary peer-checked:shadow-border-xs">
+            <%= t(".withdraw_tab") %>
+          </div>
+        </label>
+      </div>
+
+      <%= f.money_field :amount,
+        label: t(".amount_label"),
+        required: true,
+        disable_currency: true,
+        autofocus: true %>
+
+      <%= f.text_field :note,
+        label: t(".note_label"),
+        placeholder: t(".note_placeholder") %>
+
+      <p class="text-xs text-secondary">
+        <%= t(".current_balance", amount: @pocket.allocated_amount_money.format(precision: 0)) %>
+      </p>
+
+      <div class="flex gap-2 justify-end">
+        <%= f.submit t(".submit") %>
+      </div>
+    <% end %>
+  <% end %>
+<% end %>

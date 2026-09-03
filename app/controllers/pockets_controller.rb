@@ -1,8 +1,8 @@
 class PocketsController < ApplicationController
   before_action :set_account
   before_action :require_depository_account
-  before_action :require_manage_account, only: %i[new create edit update destroy]
-  before_action :set_pocket, only: %i[edit update destroy]
+  before_action :require_manage_account, only: %i[new create edit update destroy move create_movement]
+  before_action :set_pocket, only: %i[edit update destroy move create_movement]
 
   def index
     redirect_to account_path(@account, tab: :pockets)
@@ -47,6 +47,33 @@ class PocketsController < ApplicationController
       format.turbo_stream { render_pocket_streams(t("pockets.destroy.success")) }
       format.html { redirect_to account_path(@account, tab: :pockets), notice: t("pockets.destroy.success") }
     end
+  end
+
+  # Renders the dialog. The write lives in its own action below, same split
+  # Goal's own (now-removed) consume dialog used.
+  def move
+    @direction = params[:direction] == "withdraw" ? "withdraw" : "add"
+  end
+
+  def create_movement
+    amount = params.dig(:pocket_movement, :amount).to_d
+    note = params.dig(:pocket_movement, :note).presence
+    direction = params[:direction] == "withdraw" ? "withdraw" : "add"
+
+    if direction == "withdraw"
+      @pocket.withdraw_money!(amount, note: note)
+      notice = t("pockets.move.withdraw_success", amount: Money.new(amount, @pocket.currency).format)
+    else
+      @pocket.add_money!(amount, note: note)
+      notice = t("pockets.move.add_success", amount: Money.new(amount, @pocket.currency).format)
+    end
+
+    respond_to do |format|
+      format.turbo_stream { render_pocket_streams(notice) }
+      format.html { redirect_to account_path(@account, tab: :pockets), notice: notice }
+    end
+  rescue Pocket::MovementRefused => e
+    redirect_to account_path(@account, tab: :pockets), alert: t("pockets.move.errors.#{e.reason}")
   end
 
   private

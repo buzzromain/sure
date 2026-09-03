@@ -35,10 +35,42 @@ fr:
       no_auto_fill: "Aucun remplissage automatique"
       of_balance: "sur %{balance}"
       view_transactions: "Voir les transactions étiquetées"
+      move_money: "Déplacer de l'argent"
+      add_goal: "Ajouter un objectif"
+      view_goal: "Voir l'objectif"
+      goal_progress: "Objectif : %{amount} · %{status}"
+      goal_hint: "Cet objectif lit son solde depuis cette enveloppe — pas de compte de financement à choisir."
+      goal_status:
+        reached: "atteint"
+        on_track: "en bonne voie"
+        behind: "en retard"
+        no_target_date: "ouvert"
+        funded: "financé"
+        depleted: "épuisé"
       fill_direction:
         inflows: "Dépôts uniquement"
         outflows: "Dépenses uniquement"
         both: "Toutes les transactions"
+    goals:
+      new:
+        title: "Ajouter un objectif à cette enveloppe"
+      create:
+        success: "Objectif lié à l'enveloppe."
+    move:
+      title: "Déplacer de l'argent · %{name}"
+      add_tab: "Ajouter"
+      withdraw_tab: "Retirer"
+      amount_label: "Montant"
+      note_label: "Note (facultatif)"
+      note_placeholder: "ex. Déplacé depuis le compte courant"
+      current_balance: "Contient actuellement %{amount}"
+      submit: "Déplacer l'argent"
+      add_success: "%{amount} ajoutés."
+      withdraw_success: "%{amount} retirés."
+      errors:
+        non_positive: "Indiquez un montant supérieur à zéro."
+        exceeds_balance: "C'est plus que ce que cette enveloppe contient actuellement."
+        exceeds_account_balance: "Cela allouerait plus que ce que ce compte a réellement de libre."
     create:
       success: "Enveloppe créée."
     update:
@@ -50,3 +82,7 @@ fr:
     show:
       tabs:
         pockets: "Enveloppes"
+  goals:
+    show:
+      backed_by_pocket: "Adossé à une enveloppe"
+      view_pocket: "Voir l'enveloppe"
