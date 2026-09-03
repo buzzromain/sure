@@ -1,0 +1,65 @@
+<%
+  # The reverse of Goals::FundingAccountsBreakdownComponent: that shows one
+  # goal's accounts, this shows one account's goals. Same underlying data
+  # (GoalAccount), just read from the other side — no separate model, no
+  # separate concept, just the question "what's this balance spoken for?"
+  # asked from the account instead of the goal.
+  goals = account.goals.where.not(state: Goal::RELEASED_STATES).distinct.sort_by { |g| -account.goal_backing_for(g).to_d }
+  reserved_total = account.goal_earmarked_total
+  free = account.free_to_earmark
+%>
+
+<div class="space-y-4">
+  <div class="grid grid-cols-2 gap-3">
+    <div class="bg-container-inset rounded-xl p-4">
+      <p class="text-xs text-secondary uppercase tracking-wide"><%= t("accounts.show.reserved.reserved_label") %></p>
+      <p class="text-xl font-medium text-primary tabular-nums privacy-sensitive mt-1">
+        <%= Money.new(reserved_total, account.currency).format(precision: 0) %>
+      </p>
+    </div>
+    <div class="bg-container-inset rounded-xl p-4">
+      <p class="text-xs text-secondary uppercase tracking-wide"><%= t("accounts.show.reserved.free_label") %></p>
+      <p class="text-xl font-medium text-success tabular-nums privacy-sensitive mt-1">
+        <%= Money.new(free, account.currency).format(precision: 0) %>
+      </p>
+    </div>
+  </div>
+
+  <% if goals.empty? %>
+    <div class="text-center py-8">
+      <p class="text-sm text-secondary"><%= t("accounts.show.reserved.empty.heading") %></p>
+      <p class="text-xs text-subdued mt-1"><%= t("accounts.show.reserved.empty.body") %></p>
+    </div>
+  <% else %>
+    <div class="bg-container-inset rounded-xl p-1">
+      <div class="rounded-lg bg-container">
+        <% goals.each_with_index do |goal, idx| %>
+          <% link = goal.goal_accounts.find { |ga| ga.account_id == account.id } %>
+          <% earmarked = link&.allocated_amount.present? %>
+          <% backing = account.goal_backing_for(goal) %>
+          <%= link_to goal_path(goal), class: "block px-4 py-3 grid grid-cols-[24px_minmax(0,1fr)_auto] items-center gap-3 hover:bg-surface-hover rounded-lg" do %>
+            <%= render Goals::AvatarComponent.new(goal: goal, size: "sm") %>
+
+            <div class="min-w-0">
+              <p class="text-sm font-medium text-primary truncate"><%= goal.name %></p>
+              <p class="text-xs text-subdued tabular-nums privacy-sensitive">
+                <% if earmarked %>
+                  <%= t("accounts.show.reserved.earmarked_of", earmarked: Money.new(backing, goal.currency).format(precision: 0), target: goal.target_amount_money.format(precision: 0)) %>
+                <% else %>
+                  <%= t("accounts.show.reserved.uses_whole_balance") %>
+                <% end %>
+              </p>
+            </div>
+
+            <p class="text-sm font-medium text-primary tabular-nums privacy-sensitive text-right">
+              <%= Money.new(backing, goal.currency).format(precision: 0) %>
+            </p>
+          <% end %>
+          <% if idx < goals.size - 1 %>
+            <%= render "shared/ruler", classes: "mx-4" %>
+          <% end %>
+        <% end %>
+      </div>
+    </div>
+  <% end %>
+</div>

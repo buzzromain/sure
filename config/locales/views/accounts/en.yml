@@ -82,7 +82,16 @@ en:
         activity: Activity
         holdings: Holdings
         overview: Overview
+        reserved: Reserved
         statements: Statements
+      reserved:
+        reserved_label: Reserved
+        free_label: Free
+        earmarked_of: "%{earmarked} of %{target}"
+        uses_whole_balance: Uses this account's whole balance
+        empty:
+          heading: Nothing reserved on this account yet
+          body: A goal that links this account, with a specific amount set aside, shows up here.
       activity:
         amount: Amount
         balance: Balance

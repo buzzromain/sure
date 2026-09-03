@@ -48,6 +48,8 @@ class UI::AccountPage < ApplicationComponent
       [ :activity, :holdings ]
     when "Property", "Vehicle", "Loan"
       [ :activity, :overview ]
+    when "Depository"
+      [ :activity, :reserved ]
     else
       [ :activity ]
     end
@@ -81,6 +83,8 @@ class UI::AccountPage < ApplicationComponent
       render "#{account.accountable_type.downcase.pluralize}/tabs/#{tab}", account: account
     when :statements
       render_statement_tab
+    when :reserved
+      render "accounts/show/reserved", account: account
     end
   end
 

@@ -679,4 +679,24 @@ class AccountTest < ActiveSupport::TestCase
     assert_empty queries.grep(/SELECT "transactions"\.\* FROM "transactions" WHERE "transactions"\."id" =/)
     assert transfers.all? { |transfer| !Transfer.exists?(transfer.id) }
   end
+
+  # --- goal_backing_for: the account-side "Reserved" tab reads this ---
+
+  test "goal_backing_for reads a fixed earmark's own slice" do
+    account = Account.create!(family: @family, accountable: Depository.new, name: "Shared", currency: "USD", balance: 4_000)
+    goal = @family.goals.create!(name: "Trip", target_amount: 2_000, currency: "USD") do |g|
+      g.goal_accounts.build(account: account, allocated_amount: 800)
+    end
+
+    assert_equal 800, account.goal_backing_for(goal)
+  end
+
+  test "goal_backing_for reads a whole-account link's own balance" do
+    account = Account.create!(family: @family, accountable: Depository.new, name: "Dedicated", currency: "USD", balance: 6_000)
+    goal = @family.goals.create!(name: "Emergency Fund", kind: "maintained", target_amount: 5_000, currency: "USD") do |g|
+      g.goal_accounts.build(account: account)
+    end
+
+    assert_equal 6_000, account.goal_backing_for(goal)
+  end
 end

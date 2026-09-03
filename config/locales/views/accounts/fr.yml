@@ -131,7 +131,16 @@ fr:
         activity: Activité
         holdings: Holdings
         overview: Aperçu
+        reserved: Réservé
         statements: Déclarations
+      reserved:
+        reserved_label: Réservé
+        free_label: Libre
+        earmarked_of: "%{earmarked} sur %{target}"
+        uses_whole_balance: Utilise le solde entier de ce compte
+        empty:
+          heading: Rien de réservé sur ce compte pour l'instant
+          body: Un objectif lié à ce compte, avec un montant précis mis de côté, apparaîtra ici.
     sidebar:
       configure_providers: Configurez vos fournisseurs ici.
       missing_data: Données historiques manquantes

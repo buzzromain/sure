@@ -519,6 +519,15 @@ class Account < ApplicationRecord
     balance.to_d - goal_earmarked_total
   end
 
+  # How much of THIS account one goal is currently backed by — a fixed
+  # earmark's own slice, or its pool-shared remainder on a whole-balance
+  # link. Delegates straight to the goal's own math (account_amount_for via
+  # account_backing) so this account-side view and the goal's own page never
+  # disagree on the same number.
+  def goal_backing_for(goal)
+    goal.account_backing(self).amount.to_d
+  end
+
   def logo_url
     if institution_domain.present? && Setting.brand_fetch_client_id.present?
       logo_size = Setting.brand_fetch_logo_size
