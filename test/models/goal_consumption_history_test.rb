@@ -93,16 +93,46 @@ class GoalConsumptionHistoryTest < ActiveSupport::TestCase
     assert_equal shrunk, goal.reload.goal_accounts.first.allocated_amount.to_d
   end
 
-  test "a released spend is offered by the detector again" do
+  # --- consume! ---
+
+  test "consuming settles the goal and frees the earmark" do
     goal, account = goal_with_account(balance: 5_000)
-    entry = spend(account, 300, 1.day.ago)
-    goal.consume!(300, transaction: entry.entryable)
-    assert_empty Goal::WithdrawalDetector.new(goal).unattributed_outflows
 
-    goal.release_consumption!(entry.entryable)
+    goal.consume!(2_000)
 
-    ids = Goal::WithdrawalDetector.new(goal).unattributed_outflows.map(&:id)
-    assert_includes ids, entry.id
+    assert_equal 2_000, goal.reload.consumed_amount
+    assert_equal 3_000, goal.goal_accounts.first.reload.allocated_amount
+  end
+
+  test "consuming a reserve is refused" do
+    account = Account.create!(
+      family: @family, accountable: Depository.new,
+      name: "Reserve Pot", currency: "USD", balance: 4_000
+    )
+    reserve = @family.goals.create!(
+      name: "Precaution", target_amount: 6_000, currency: "USD", kind: "maintained"
+    ) { |g| g.goal_accounts.build(account: account) }
+
+    error = assert_raises(Goal::ConsumptionRefused) { reserve.consume!(1_000) }
+
+    assert_equal :maintained, error.reason
+    assert_equal 0, reserve.reload.consumed_amount
+  end
+
+  # An account id that resolves to nothing must not fall back to the goal's
+  # single link, or a single-link goal would record a spend against an
+  # account nobody named.
+  test "consuming against an account the goal isn't linked to is refused" do
+    goal, account = goal_with_account(balance: 5_000)
+    other_account = Account.create!(
+      family: @family, accountable: Depository.new,
+      name: "Other Pot", currency: "USD", balance: 1_000
+    )
+
+    error = assert_raises(Goal::ConsumptionRefused) { goal.consume!(1_000, account: other_account) }
+
+    assert_equal :account_not_linked, error.reason
+    assert_equal 0, goal.reload.consumed_amount
   end
 
   test "releasing a spend claimed by a different goal is refused" do

@@ -117,46 +117,6 @@ class GoalsControllerTest < ActionDispatch::IntegrationTest
     assert_no_match(/goal_account_ids_#{private_account.id}/, response.body)
   end
 
-  # A goal can be backed by an account the viewer is not allowed to see. Both
-  # halves of that leak matter: the dialog naming it, and a direct POST moving
-  # its earmark — the figures afterwards saying how much was in it.
-  test "the consumption dialog does not name a linked account the viewer cannot see" do
-    private_account = private_linked_account
-
-    get consume_goal_url(@goal)
-
-    assert_response :success
-    assert_no_match(/Member Private Checking/, response.body)
-    assert_no_match(/#{private_account.id}/, response.body)
-  end
-
-  test "consumption is refused against a linked account the viewer cannot see" do
-    private_account = private_linked_account
-    link = @goal.goal_accounts.find_by(account_id: private_account.id)
-
-    post consume_goal_url(@goal), params: { amount: "100", account_id: private_account.id }
-
-    assert_redirected_to goal_path(@goal)
-    assert_equal 0, @goal.reload.consumed_amount
-    assert_equal 500, link.reload.allocated_amount
-  end
-
-  # The outflow panel is the third door onto a private backing account: it
-  # would list its transactions, naming the account, its spending and roughly
-  # its size to someone with no access to it.
-  test "the outflow panel does not surface a spend on an account the viewer cannot see" do
-    private_account = private_linked_account
-    private_account.entries.create!(
-      name: "Private Spend", date: Date.current, amount: 400,
-      currency: private_account.currency, entryable: Transaction.new
-    )
-
-    get goal_url(@goal)
-
-    assert_response :success
-    assert_no_match(/Private Spend/, response.body)
-  end
-
   test "create rejects a same-family account not shared with the current user" do
     private_account = Account.create!(
       family: @user.family,
@@ -590,151 +550,6 @@ class GoalsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-balance][data-earmarked-by-others]", minimum: 1
   end
 
-  # --- Lot B4: recording a partial spend ---
-
-  test "recording a spend keeps the goal at full progress and frees the earmark" do
-    account = Account.create!(
-      family: @user.family, accountable: Depository.new,
-      name: "Trip Pot", currency: @user.family.currency, balance: 5_000
-    )
-    goal = @user.family.goals.create!(name: "Trip", target_amount: 5_000, currency: @user.family.currency) do |g|
-      g.goal_accounts.build(account: account, allocated_amount: 5_000)
-    end
-
-    post consume_goal_url(goal), params: { amount: 2_000 }
-
-    assert_redirected_to goal_url(goal)
-    assert_equal 2_000, goal.reload.consumed_amount
-    assert_equal 3_000, goal.goal_accounts.first.reload.allocated_amount
-  end
-
-  test "a refused spend says which rule refused it" do
-    account = Account.create!(
-      family: @user.family, accountable: Depository.new,
-      name: "Reserve Pot", currency: @user.family.currency, balance: 4_000
-    )
-    reserve = @user.family.goals.create!(
-      name: "Precaution", target_amount: 6_000, currency: @user.family.currency, kind: "maintained"
-    ) { |g| g.goal_accounts.build(account: account) }
-
-    post consume_goal_url(reserve), params: { amount: 1_000 }
-
-    assert_redirected_to goal_url(reserve)
-    assert_equal I18n.t("goals.consume.errors.maintained"), flash[:alert]
-    assert_equal 0, reserve.reload.consumed_amount
-  end
-
-  # A blank account id means "this goal has one link". An id resolving to
-  # nothing must not fall back to that, or a single-link goal would record a
-  # spend against an account the user never named.
-  test "an unknown account id is refused rather than falling through" do
-    account = Account.create!(
-      family: @user.family, accountable: Depository.new,
-      name: "Trip Pot", currency: @user.family.currency, balance: 5_000
-    )
-    goal = @user.family.goals.create!(name: "Trip", target_amount: 5_000, currency: @user.family.currency) do |g|
-      g.goal_accounts.build(account: account, allocated_amount: 5_000)
-    end
-
-    post consume_goal_url(goal), params: { amount: 1_000, account_id: SecureRandom.uuid }
-
-    assert_equal I18n.t("goals.consume.errors.account_not_linked"), flash[:alert]
-    assert_equal 0, goal.reload.consumed_amount
-  end
-
-  # --- Detaching an attribution ---
-
-  test "detaching a spend takes it back off the goal" do
-    goal, entry = goal_with_outflow
-    post consume_goal_url(goal), params: { transaction_id: entry.entryable_id }
-    assert_equal entry.amount.to_d, goal.reload.consumed_amount
-
-    delete release_consumption_goal_url(goal, transaction_id: entry.entryable_id)
-
-    assert_redirected_to goal_url(goal)
-    assert_equal BigDecimal("0"), goal.reload.consumed_amount
-  end
-
-  test "detaching does not restore the account's earmark" do
-    goal, entry = goal_with_outflow
-    post consume_goal_url(goal), params: { transaction_id: entry.entryable_id }
-    shrunk = goal.reload.goal_accounts.first.allocated_amount.to_d
-
-    delete release_consumption_goal_url(goal, transaction_id: entry.entryable_id)
-
-    assert_equal shrunk, goal.reload.goal_accounts.first.allocated_amount.to_d
-  end
-
-  test "detaching a spend nothing attributed is refused" do
-    goal, entry = goal_with_outflow
-
-    delete release_consumption_goal_url(goal, transaction_id: entry.entryable_id)
-
-    assert_redirected_to goal_url(goal)
-    assert_equal I18n.t("goals.consume.errors.transaction_not_found"), flash[:alert]
-  end
-
-  # Regression: `release_consumption` used to fall back to a
-  # `goals.consume.errors.generic` locale key that did not exist anywhere in
-  # the repo, so this reachable-in-production refusal rendered as a raw
-  # "translation missing" string instead of something readable.
-  test "detaching more than consumed_amount can cover shows a readable message" do
-    goal, entry = goal_with_outflow
-    post consume_goal_url(goal), params: { transaction_id: entry.entryable_id }
-    goal.update_columns(consumed_amount: 100) # simulate drift
-
-    delete release_consumption_goal_url(goal, transaction_id: entry.entryable_id)
-
-    assert_redirected_to goal_url(goal)
-    assert_equal I18n.t("goals.consume.errors.release_exceeds_consumed"), flash[:alert]
-    assert_no_match(/translation missing/, flash[:alert])
-  end
-
-  # Scoped through the same accessible-accounts list as attributing: a spend
-  # on a linked account private to another family member is not this reader's
-  # to detach, any more than it was theirs to see.
-  test "detaching a spend on an account the viewer cannot see is refused" do
-    private_account = private_linked_account
-    entry = private_account.entries.create!(
-      name: "Private spend", date: Date.current, amount: 100,
-      currency: @goal.currency, entryable: Transaction.new
-    )
-    @goal.consume!(100, account: private_account, transaction: entry.entryable)
-    assert_equal 100, @goal.reload.consumed_amount
-
-    delete release_consumption_goal_url(@goal, transaction_id: entry.entryable_id)
-
-    assert_equal I18n.t("goals.consume.errors.transaction_not_found"), flash[:alert]
-    assert_equal 100, @goal.reload.consumed_amount
-  end
-
-  # --- Lot B5: attributing an outflow the app spotted ---
-
-  test "attributing an outflow takes its amount and stops offering it" do
-    goal, entry = goal_with_outflow
-
-    post consume_goal_url(goal), params: { transaction_id: entry.entryable_id }
-
-    assert_redirected_to goal_url(goal)
-    assert_equal entry.amount.to_d, goal.reload.consumed_amount
-
-    get goal_url(goal)
-    assert_no_match I18n.t("goals.unattributed_outflows.heading"), response.body
-  end
-
-  # The stamp is what makes this idempotent: replaying the same attribution
-  # must not credit the goal twice for one spend.
-  test "the same outflow cannot be attributed twice" do
-    goal, entry = goal_with_outflow
-    post consume_goal_url(goal), params: { transaction_id: entry.entryable_id }
-    recorded = goal.reload.consumed_amount
-
-    post consume_goal_url(goal), params: { transaction_id: entry.entryable_id }
-
-    assert_equal recorded, goal.reload.consumed_amount
-    assert_equal I18n.t("goals.consume.errors.transaction_not_found"), flash[:alert]
-  end
-
   # The months mode could not be created from the UI at all. The form makes the
   # amount read-only, so it submits empty; `target_amount` is required and
   # validations run before any save callback, so the derivation that fills it
@@ -944,29 +759,6 @@ class GoalsControllerTest < ActionDispatch::IntegrationTest
     assert_select "form[action=?]", complete_goal_path(goal)
   end
 
-  # Two doors lead to the same dialog, the panel and the overflow menu, and they
-  # disagreed: the menu gated on `current_balance`, which counts every linked
-  # account including ones private to another member. A reader backed only by
-  # such an account was shown the entry, opened a dialog with nothing to pick,
-  # and was refused on submit. Asserted page-wide on purpose — neither door may
-  # offer it.
-  test "money the reader cannot reach opens no door to the spend dialog" do
-    account = Account.create!(
-      family: @user.family, owner: users(:family_member), accountable: Depository.new,
-      name: "Member Only Pot", currency: "USD", balance: 5_000
-    )
-    goal = @user.family.goals.create!(name: "Hidden", target_amount: 5_000, currency: "USD") do |g|
-      g.goal_accounts.build(account: account, allocated_amount: 5_000)
-    end
-
-    get goal_url(goal)
-
-    assert_response :success
-    assert goal.current_balance.to_d.positive?, "the goal is backed, just not for this reader"
-    assert_empty css_select("a[href='#{consume_goal_path(goal)}']"),
-      "a spend was still offered against money the reader cannot see"
-  end
-
   private
 
     def spent_goal_for_display
@@ -1049,34 +841,6 @@ class GoalsControllerTest < ActionDispatch::IntegrationTest
 
   private
 
-    # A private account of another member, linked to the goal under test.
-    def private_linked_account
-      account = Account.create!(
-        family: @user.family,
-        owner: users(:family_member),
-        accountable: Depository.new,
-        name: "Member Private Checking",
-        currency: @goal.currency,
-        balance: 1_000
-      )
-      @goal.goal_accounts.create!(account: account, allocated_amount: 500)
-      account
-    end
-
-    def goal_with_outflow
-      account = Account.create!(
-        family: @user.family, accountable: Depository.new,
-        name: "Trip Pot #{SecureRandom.hex(4)}", currency: @user.family.currency, balance: 5_000
-      )
-      goal = @user.family.goals.create!(
-        name: "Trip", target_amount: 5_000, currency: @user.family.currency
-      ) { |g| g.goal_accounts.build(account: account, allocated_amount: 5_000) }
-      entry = account.entries.create!(
-        name: "Flights", date: Date.current, amount: 1_200,
-        currency: account.currency, entryable: Transaction.new
-      )
-      [ goal, entry ]
-    end
     # An active one_off goal sitting exactly at its target, on an account no
     # other goal claims.
     def fully_funded_goal

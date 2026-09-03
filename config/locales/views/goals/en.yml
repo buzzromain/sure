@@ -95,29 +95,6 @@ en:
     reopen:
       success: Goal reopened.
       invalid_transition: Goal can't be reopened from its current state.
-    consume:
-      title: Record a spend
-      subtitle: "%{goal}"
-      amount_label: How much did you use?
-      amount_hint: "%{saved} is currently backing this goal."
-      account_label: From which account?
-      earmark_note: The amount you record stops being reserved for this goal, so your other goals on that account get their share back.
-      cancel: Cancel
-      submit: Record it
-      success: "%{amount} recorded as used."
-      errors:
-        non_positive: Enter an amount greater than zero.
-        maintained: A reserve is drawn down and refilled, not spent — its shortfall already shows on the goal.
-        exceeds_target: That is more than this goal ever set out to save.
-        account_required: This goal is funded by several accounts — say which one the money came out of.
-        account_not_linked: That account does not fund this goal.
-        not_active: This goal is no longer active, so nothing can be recorded against it.
-        exceeds_earmark: That is more than the goal has earmarked on this account.
-        transaction_already_claimed: That outflow has already been attributed.
-        transaction_not_found: That outflow is no longer available to attribute.
-        not_claimed_by_this_goal: That outflow was attributed to a different goal.
-        release_exceeds_consumed: That would take this goal's recorded spend below zero.
-        no_linked_account: This goal has no funding account left.
     consumed_outflows:
       confirm_detach_cta: Yes, undo it
       confirm_detach_body: "%{amount} goes back to counting against this goal. The account's earmark is not restored — set it again yourself if you want it back."
@@ -137,18 +114,8 @@ en:
       tag_hint: "Tagged %{tag} on a linked account counts here automatically."
       no_tag_hint: Nothing recorded yet.
       empty: Nothing recorded yet.
-    release_consumption:
-      success: That spend is no longer counted against this goal.
-    unattributed_outflows:
-      heading: Money left these accounts
-      body: If any of this was spent on %{goal}, say so and it stops counting against the target.
-      attribute: Attribute
-      confirm_body: "%{amount} will count as spent on %{goal} instead of counting against it. This can be undone."
-      confirm_cta: Yes, attribute it
-      confirm_title: Attribute this spend?
     show:
       edit: Edit
-      consume: I used some of this money
       pause: Pause
       resume: Resume
       complete: Mark complete
