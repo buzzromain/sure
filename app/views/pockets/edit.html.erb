@@ -4,7 +4,6 @@
     <%= render "form",
       pocket: @pocket,
       account: @account,
-      url: account_pocket_path(@account, @pocket),
-      available_tags: @available_tags %>
+      url: account_pocket_path(@account, @pocket) %>
   <% end %>
 <% end %>
