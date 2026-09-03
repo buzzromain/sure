@@ -780,6 +780,60 @@ class Goal < ApplicationRecord
     self
   end
 
+  # A reserve's earmark moves with real money in either direction: a spend on
+  # the account draws it down, a deposit tops it back up — the same one-tag,
+  # one-transaction mechanism a one-off goal spends with, just symmetric where
+  # a one-off goal only ever draws down. `consumed_amount` never moves here,
+  # because a reserve is never spent, only drawn down and refilled — the same
+  # reasoning `consume!` refuses a maintained goal for, just above.
+  #
+  # `signed_amount` is signed the intuitive way — positive tops the earmark
+  # up, negative draws it down — which is the OPPOSITE of this app's own
+  # `entry.amount` (positive there means an outflow). Passing `-entry.amount`
+  # straight through therefore does the right thing either way: an outflow
+  # negates to a draw-down, an inflow negates to a top-up. A caller never
+  # branches on direction itself.
+  #
+  # Only a fixed earmark can move like this. A whole-account link has no
+  # slice to shrink or grow: its backing already IS the account balance, and
+  # moves on its own with every transaction, tagged or not.
+  def adjust_reserve!(signed_amount, account:, transaction: nil)
+    signed_amount = signed_amount.to_d
+    raise ConsumptionRefused.new(:zero_amount) if signed_amount.zero?
+    raise ConsumptionRefused.new(:not_maintained) unless maintained?
+
+    link = goal_accounts.find { |ga| ga.account_id == account.id } ||
+      raise(ConsumptionRefused.new(:account_not_linked))
+    raise ConsumptionRefused.new(:no_earmark) if link.allocated_amount.nil?
+
+    with_lock do
+      raise ConsumptionRefused.new(:not_active) unless active?
+
+      link.lock!
+      stamp_consumption!(transaction) if transaction
+
+      new_allocated = link.allocated_amount.to_d + signed_amount
+      raise ConsumptionRefused.new(:exceeds_earmark) if new_allocated.negative?
+
+      # Topping up (signed_amount positive, so new_allocated grew) can only
+      # take room the account actually has free — the same ceiling an
+      # unallocated link's own share is capped at, in backing_share_for.
+      if new_allocated > link.allocated_amount.to_d
+        others_fixed = (pooled_allocations[account.id] || [])
+          .reject { |r| r[:goal_id] == id }
+          .sum { |r| r[:allocated_amount].to_d }
+        room = [ account.balance.to_d - others_fixed, 0 ].max
+        raise ConsumptionRefused.new(:exceeds_account_balance) if new_allocated > room
+      end
+
+      link.update!(allocated_amount: new_allocated)
+    end
+
+    reload
+    reset_state_dependent_caches!
+    self
+  end
+
   def remaining_amount_money
     @remaining_amount_money ||= Money.new(remaining_amount, currency)
   end
@@ -883,6 +937,43 @@ class Goal < ApplicationRecord
         transaction.update!(extra: extra)
 
         update!(consumed_amount: consumed_amount.to_d - amount)
+      end
+    end
+
+    reload
+    reset_state_dependent_caches!
+    self
+  end
+
+  # Undo of adjust_reserve!. Unlike release_consumption!, the earmark IS
+  # restored — deliberately, unlike that method's own choice not to. A
+  # reserve's whole point is holding a figure back; a mis-tagged transaction
+  # leaving it short (or over) of what it should hold is the bug, not a
+  # decision to preserve.
+  #
+  # Reads `entry.amount`'s own sign to know which way to reverse, the same
+  # convention adjust_reserve! took it by: undoing a draw-down (a positive
+  # entry.amount, which subtracted) adds it back; undoing a top-up (negative,
+  # which added) removes it. One formula covers both.
+  def release_reserve_adjustment!(transaction)
+    raise ConsumptionRefused.new(:not_active) unless active?
+
+    with_lock do
+      transaction.with_lock do
+        claimed = transaction.extra&.dig("goal", "consumed_goal_id")
+        raise ConsumptionRefused.new(:not_claimed_by_this_goal) unless claimed == id
+
+        link = goal_accounts.find { |ga| ga.account_id == transaction.entry.account_id } ||
+          raise(ConsumptionRefused.new(:account_not_linked))
+
+        extra = transaction.extra.deep_dup
+        extra["goal"]&.delete("consumed_goal_id")
+        extra.delete("goal") if extra["goal"]&.empty?
+        transaction.update!(extra: extra)
+
+        link.lock!
+        new_allocated = link.allocated_amount.to_d + transaction.entry.amount.to_d
+        link.update!(allocated_amount: [ new_allocated, 0 ].max)
       end
     end
 

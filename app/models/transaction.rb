@@ -415,19 +415,29 @@ class Transaction < ApplicationRecord
     end
 
     # POC: tagging this transaction with a goal's tag, on one of that goal's
-    # linked accounts, IS the attribution — the same consume! a manual flow
-    # would call, just triggered by the tag instead of a confirm click.
+    # linked accounts, IS the attribution — the same consume! (or, for a
+    # maintained reserve's earmark, adjust_reserve!) a manual flow would call,
+    # just triggered by the tag instead of a confirm click.
+    #
+    # A one-off goal only ever spends, so only an outflow does anything for
+    # it. A reserve moves either way: adjust_reserve! reads entry.amount's own
+    # sign, so passing it negated is correct whichever direction this is.
     def attribute_to_linked_goal(tag)
       goal = Goal.find_by(tag_id: tag.id)
       return unless goal && entry
       return unless goal.linked_accounts.exists?(id: entry.account_id)
-      return unless entry.amount.positive? # outflow only, for this POC
 
-      goal.consume!(entry.amount, account: entry.account, transaction: self)
+      if goal.maintained?
+        goal.adjust_reserve!(-entry.amount, account: entry.account, transaction: self)
+      else
+        return unless entry.amount.positive? # outflow only, for this POC
+        goal.consume!(entry.amount, account: entry.account, transaction: self)
+      end
     rescue Goal::ConsumptionRefused
       # A tag applied somewhere it doesn't fit (goal inactive, already
-      # consumed elsewhere, exceeds the target) silently does not attribute.
-      # Good enough for a POC; a real version would surface this to the user.
+      # consumed elsewhere, exceeds the target, a whole-account reserve with
+      # no earmark to move) silently does not attribute. Good enough for a
+      # POC; a real version would surface this to the user.
     end
 
     # Removing the tag IS the undo — same mechanism whichever screen it
@@ -437,7 +447,11 @@ class Transaction < ApplicationRecord
       return unless goal && entry
       return unless goal.consumed_entries([ entry.account_id ]).exists?(entry.id)
 
-      goal.release_consumption!(self)
+      if goal.maintained?
+        goal.release_reserve_adjustment!(self)
+      else
+        goal.release_consumption!(self)
+      end
     rescue Goal::ConsumptionRefused
     end
 end
