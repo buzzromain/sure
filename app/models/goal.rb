@@ -49,13 +49,13 @@ class Goal < ApplicationRecord
   before_destroy :clear_consumption_stamps
 
   private
-    # "pockets:" — namespaced so it reads as system-managed the moment it
+    # "goal:" — namespaced so it reads as system-managed the moment it
     # shows up in the tag picker, not just another label a user typed.
     # find_or_create_by! rather than create!: two goals sharing a name is
     # possible (nothing stops it), and the second one should reuse the tag
     # a rename left behind rather than collide on the uniqueness validation.
     def ensure_tracking_tag
-      generated = family.tags.find_or_create_by!(name: "pockets:#{name}") do |t|
+      generated = family.tags.find_or_create_by!(name: "goal:#{name}") do |t|
         t.color = Tag::COLORS.sample
       end
       update_column(:tag_id, generated.id)
@@ -66,9 +66,9 @@ class Goal < ApplicationRecord
     # name than stealing a tag another goal (or the user) already owns.
     def sync_tracking_tag_name
       return unless tag_id.present?
-      return if family.tags.where.not(id: tag_id).exists?(name: "pockets:#{name}")
+      return if family.tags.where.not(id: tag_id).exists?(name: "goal:#{name}")
 
-      tag.update_column(:name, "pockets:#{name}")
+      tag.update_column(:name, "goal:#{name}")
     end
   public
 
