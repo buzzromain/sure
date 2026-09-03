@@ -14,7 +14,11 @@
         <%= icon("receipt", size: "sm") %>
       </div>
       <div class="min-w-0">
-        <% if consumed.any? %>
+        <%# consumed_amount only means something for a one-off goal: a reserve
+            is drawn down and refilled, never "spent", so it stays 0 no matter
+            how many tagged transactions moved its earmark either way — this
+            line would read as "$0 used" while the earmark visibly moved. %>
+        <% if consumed.any? && goal.one_off? %>
           <p class="text-sm text-primary tabular-nums privacy-sensitive truncate">
             <%= t("goals.consumed_outflows.summary_compact",
                   total: goal.consumed_amount_money.format(precision: 0),
