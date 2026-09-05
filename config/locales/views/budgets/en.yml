@@ -128,3 +128,16 @@ en:
       recent_transactions: "Recent Transactions"
       view_all_transactions: "View all category transactions"
       no_transactions: "No transactions found for this budget period."
+      goal: "Goal"
+      add_goal: "Add a goal"
+      view_goal: "View goal"
+    goals:
+      new:
+        title: "Add a goal to this envelope"
+        hint: "This goal reads its balance from this category's rollover — no funding accounts to pick."
+      create:
+        success: "Goal linked to envelope."
+  goals:
+    show:
+      backed_by_category: "Backed by budget envelope"
+      view_category: "View envelope"

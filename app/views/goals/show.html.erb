@@ -184,6 +184,17 @@
         <%= render DS::Link.new(text: t(".view_pocket"), href: account_path(@goal.pocket.account, tab: :pockets), frame: :_top) %>
       </div>
     <% end %>
+  <% elsif @goal.funding_category.present? %>
+    <%= render DS::Card.new do %>
+      <h2 class="text-sm font-medium text-primary mb-2"><%= t(".backed_by_category") %></h2>
+      <div class="flex items-center justify-between gap-3">
+        <p class="text-sm text-secondary"><%= @goal.funding_category.name %></p>
+        <% if (current_envelope = @goal.current_funding_budget_category) %>
+          <%= render DS::Link.new(text: t(".view_category"),
+                href: budget_budget_category_path(current_envelope.budget, current_envelope), frame: :_top) %>
+        <% end %>
+      </div>
+    <% end %>
   <% elsif @goal.linked_accounts.any? %>
     <%= render DS::Card.new do %>
       <%= render Goals::FundingAccountsBreakdownComponent.new(goal: @goal) %>

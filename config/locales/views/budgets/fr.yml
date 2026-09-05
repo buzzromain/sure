@@ -16,6 +16,12 @@ fr:
       shared_title: Laisser vide pour partager le budget des parents
     confirm_button:
       confirm: Confirmer
+    goals:
+      new:
+        title: Ajouter un objectif à cette enveloppe
+        hint: Cet objectif lit son solde depuis le report de cette catégorie — aucun compte de financement à choisir.
+      create:
+        success: Objectif lié à l'enveloppe.
     index:
       description: Ajustez les budgets des catégories pour fixer des limites de dépenses. Les fonds non alloués seront automatiquement attribués comme non classés.
       title: Modifiez vos budgets de catégorie
@@ -43,7 +49,9 @@ fr:
       oops: Oups !
       use_defaults: Utiliser les valeurs par défaut (recommandé)
     show:
+      add_goal: Ajouter un objectif
       budgeted: Budgétisé
+      goal: Objectif
       category: Catégorie
       left: restant
       monthly_average_spending: Dépenses moyennes mensuelles
@@ -56,6 +64,7 @@ fr:
       spending: "%{date} dépenses"
       status: Statut
       view_all_transactions: Voir toutes les transactions de catégorie
+      view_goal: Voir l'objectif
   budgets:
     remaining_summary:
       heading: Reste dans le budget
@@ -128,3 +137,7 @@ fr:
       tabs:
         actual: Réel
         budgeted: Budgété
+  goals:
+    show:
+      backed_by_category: Adossé à une enveloppe budget
+      view_category: Voir l'enveloppe

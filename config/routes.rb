@@ -415,6 +415,7 @@ Rails.application.routes.draw do
 
     resources :budget_categories, only: %i[index show update] do
       post :move, on: :collection
+      resource :goal, only: %i[new create], controller: "budget_category_goals"
     end
   end
 

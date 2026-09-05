@@ -9,6 +9,10 @@ class Category < ApplicationRecord
   # foreign key (NO ACTION) would refuse the delete outright, and taking a
   # category away would fail on a goal the user may not even remember making.
   has_many :goal_expense_categories, dependent: :destroy
+  # The reverse side of Goal#funding_category. Nullify, not destroy: removing
+  # the category shouldn't take the goal's history with it, only detach its
+  # funding source (same reasoning as Pocket's has_one :goal).
+  has_one :funding_goal, class_name: "Goal", foreign_key: :funding_category_id, dependent: :nullify, inverse_of: :funding_category
   has_many :subcategories,
          -> { order(:name) },
          class_name: "Category",

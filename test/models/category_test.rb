@@ -198,4 +198,25 @@ class CategoryTest < ActiveSupport::TestCase
 
     assert_equal [ c ], result.to_a
   end
+
+  test "funding_goal reads the goal linked to this category's envelope" do
+    category = @family.categories.create!(name: "Insurance #{Time.now.to_f}", color: "#6172F3")
+    goal = Goal.new(family: @family, name: "Annual insurance", target_amount: 1_200, currency: "USD",
+                     funding_category: category)
+    goal.save!
+
+    assert_equal goal, category.reload.funding_goal
+  end
+
+  test "destroying a category detaches its funding_goal instead of destroying it" do
+    category = @family.categories.create!(name: "Insurance #{Time.now.to_f}", color: "#6172F3")
+    goal = Goal.new(family: @family, name: "Annual insurance", target_amount: 1_200, currency: "USD",
+                     funding_category: category)
+    goal.save!
+
+    category.destroy!
+
+    assert Goal.exists?(goal.id), "the goal must survive its funding category being removed"
+    assert_nil goal.reload.funding_category_id
+  end
 end

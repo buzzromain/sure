@@ -38,6 +38,25 @@
             </dd>
           </div>
 
+          <% if (funding_goal = @budget_category.category.funding_goal) %>
+            <div class="flex items-center justify-between text-sm">
+              <dt class="text-secondary"><%= t(".goal") %></dt>
+              <dd>
+                <%= render DS::Link.new(text: t(".view_goal"), href: goal_path(funding_goal),
+                      variant: "outline", size: "sm", frame: :_top) %>
+              </dd>
+            </div>
+          <% else %>
+            <div class="flex items-center justify-between text-sm">
+              <dt class="text-secondary"><%= t(".goal") %></dt>
+              <dd>
+                <%= render DS::Link.new(text: t(".add_goal"),
+                      href: new_budget_budget_category_goal_path(@budget_category.budget, @budget_category),
+                      variant: "outline", size: "sm", frame: :modal) %>
+              </dd>
+            </div>
+          <% end %>
+
           <% if @budget_category.budget.initialized? %>
             <div class="flex items-center justify-between text-sm">
               <dt class="text-secondary"><%= t(".status") %></dt>

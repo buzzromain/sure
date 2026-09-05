@@ -39,7 +39,7 @@ class Goal < ApplicationRecord
   # month's Budget and its identity changes every period, so a stable
   # reference has to sit one level up. See #current_funding_budget_category
   # for how "the current month's envelope" is resolved from it.
-  belongs_to :funding_category, class_name: "Category", optional: true
+  belongs_to :funding_category, class_name: "Category", optional: true, inverse_of: :funding_goal
   validates :funding_category_id, uniqueness: true, allow_nil: true
   # autosave so earmark (allocated_amount) edits on already-linked accounts
   # persist through goal.save! — without it Rails only saves newly built
@@ -478,6 +478,26 @@ class Goal < ApplicationRecord
     linked_accounts
       .select { |account| account.currency == currency && ids.include?(account.id) }
       .sum { |account| account_amount_for(account) }
+  end
+
+  # The current month's BudgetCategory row for this goal's funding_category,
+  # or nil. Public: the goal show page reads it to link back to the envelope.
+  # Deliberately read-only: the only way to GUARANTEE that row exists is
+  # Budget.find_or_bootstrap, which writes (creates budget_categories, reruns
+  # Budget::RolloverCalculator) and is never triggered by anything but a
+  # request touching the budget pages/assistant directly — never by the mere
+  # passage of time. Calling it here would turn reading a goal's balance into
+  # a write on whatever page happens to render it first. A family that hasn't
+  # opened this month's budget yet simply reads a zero-balance envelope, same
+  # as every other figure in this app that depends on an initialized Budget.
+  def current_funding_budget_category
+    return nil unless funding_category_id.present?
+
+    start_date, end_date = Budget.period_for(Date.current, family: family)
+    family.budgets
+          .find_by(user_id: nil, start_date: start_date, end_date: end_date)
+          &.budget_categories
+          &.find_by(category_id: funding_category_id)
   end
 
   # Whether this reader can record a spend against this goal. Two doors lead to
@@ -1304,26 +1324,6 @@ class Goal < ApplicationRecord
   end
 
   private
-    # The current month's BudgetCategory row for this goal's funding_category,
-    # or nil. Deliberately read-only: the only way to GUARANTEE that row exists
-    # is Budget.find_or_bootstrap, which writes (creates budget_categories,
-    # reruns Budget::RolloverCalculator) and is never triggered by anything
-    # but a request touching the budget pages/assistant directly — never by
-    # the mere passage of time. Calling it here would turn reading a goal's
-    # balance into a write on whatever page happens to render it first. A
-    # family that hasn't opened this month's budget yet simply reads a
-    # zero-balance envelope, same as every other figure in this app that
-    # depends on an initialized Budget.
-    def current_funding_budget_category
-      return nil unless funding_category_id.present?
-
-      start_date, end_date = Budget.period_for(Date.current, family: family)
-      family.budgets
-            .find_by(user_id: nil, start_date: start_date, end_date: end_date)
-            &.budget_categories
-            &.find_by(category_id: funding_category_id)
-    end
-
     # This goal's amount from one linked account under the active progress
     # basis: net contributions (market-gain-excluded, floored at 0) on the
     # contributions basis, or the allocation-aware backing balance otherwise.
