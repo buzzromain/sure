@@ -1,4 +1,6 @@
-<%= flash_notification_stream_items %>
+<% flash_notification_stream_items.each do |item| %>
+  <%= item %>
+<% end %>
 
 <%= turbo_stream.replace dom_id(@budget, :allocation_progress), partial: "budget_categories/allocation_progress", locals: { budget: @budget } %>
 

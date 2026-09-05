@@ -120,6 +120,15 @@ class BudgetCategoriesController < ApplicationController
                                   amount: move_reserve_amount_param, family: @budget.family, user: @budget.user)
     Budget::RolloverCalculator.new(family: @budget.family, user: @budget.user).recompute!
 
+    # Unlike move_allocation!, reallocate! never touches @from/@to
+    # themselves (it only creates BudgetAdjustment rows), and the
+    # calculator's upsert_all writes adjustments_balance at the SQL level,
+    # bypassing these in-memory instances entirely -- without an explicit
+    # reload the turbo_stream below would re-render both rows with the
+    # stale adjustments_balance they were loaded with at the top of this
+    # action.
+    @from.reload
+    @to.reload
     @budget.reload
     flash.now[:notice] = t(".success")
     respond_to do |format|

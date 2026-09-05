@@ -1,4 +1,6 @@
-<%= flash_notification_stream_items %>
+<% flash_notification_stream_items.each do |item| %>
+  <%= item %>
+<% end %>
 
 <%# adjustments_balance isn't part of allocation_progress/confirm_button's
     math (those stay budgeted_spending-only, same reason total_rolled_over
