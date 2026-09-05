@@ -153,18 +153,40 @@ class BudgetCategoryTest < ActiveSupport::TestCase
     assert_equal 200, @subcategory_with_limit_bc.available_to_spend
   end
 
-  # Invariants still to add here, once the DB constraint below is lifted
-  # (docs/mettre-de-cote-recommandation-produit-technique.md, plan step 3):
-  #   - a negative rolled_over_amount survives and carries into the next period
-  #   - percent_of_budget_spent never returns nil or a negative percentage
-  #     once own-budget or parent_budget can go negative (see the two exact
-  #     failure branches quoted in the plan)
-  #   - over_budget? reports true from a negative carry alone, with no new
-  #     spending in the current period
-  # Not testable today: `chk_budget_categories_rolled_over_amount_non_negative`
-  # on budget_categories.rolled_over_amount makes a negative rollover a DB
-  # error, not a bad calculation — there is nothing to write a red test against
-  # until that constraint is removed.
+  # Step 3: rolled_over_amount can now be negative (the DB check constraint
+  # that used to forbid it is gone). percent_of_budget_spent must never
+  # return nil or a raw negative number once the effective budget itself
+  # goes to or below zero — see the plan for the exact fallthrough each of
+  # these two tests used to hit before the fix.
+  test "percent_of_budget_spent returns 100, not nil, once its own budget is negative and something was spent" do
+    @subcategory_with_limit_bc.update!(rollover_enabled: true)
+    @subcategory_with_limit_bc.update_column(:rolled_over_amount, -500) # budgeted 300 - 500 = -200
+
+    @budget.stubs(:budget_category_actual_spending).with(@subcategory_with_limit_bc).returns(50)
+
+    assert_equal 100, @subcategory_with_limit_bc.percent_of_budget_spent
+    assert_equal 100, @subcategory_with_limit_bc.bar_width_percent
+    assert_not @subcategory_with_limit_bc.near_limit?, "over_budget? already covers this, near_limit? must not also fire"
+  end
+
+  test "percent_of_budget_spent returns 0, not nil, when its own budget is negative but nothing was spent yet" do
+    @subcategory_with_limit_bc.update!(rollover_enabled: true)
+    @subcategory_with_limit_bc.update_column(:rolled_over_amount, -500)
+
+    @budget.stubs(:budget_category_actual_spending).with(@subcategory_with_limit_bc).returns(0)
+
+    assert_equal 0, @subcategory_with_limit_bc.percent_of_budget_spent
+  end
+
+  test "percent_of_budget_spent returns 100, not a negative number, once the inherited parent budget is negative" do
+    @parent_budget_category.update!(rollover_enabled: true)
+    @parent_budget_category.update_column(:rolled_over_amount, -1_500) # budgeted 1000 - 1500 = -500
+
+    @budget.stubs(:budget_category_actual_spending).with(@subcategory_inheriting_bc).returns(80)
+
+    assert_equal 100, @subcategory_inheriting_bc.percent_of_budget_spent
+  end
+
   test "percent_of_budget_spent for inheriting subcategory uses parent budget" do
     # Mock spending
     @budget.stubs(:budget_category_actual_spending).with(@subcategory_inheriting_bc).returns(100)
@@ -556,7 +578,7 @@ class BudgetCategoryRolloverTest < ActiveSupport::TestCase
     assert_equal 170, budget_category_for(second).available_to_spend
   end
 
-  test "an overspent month rolls over nothing rather than a negative" do
+  test "an overspent month rolls over as a negative, and a fresh allocation only partly offsets it" do
     first = initialized_budget(2.months.ago)
     allocate(first, 100)
     spend(150, budget: first)
@@ -566,8 +588,8 @@ class BudgetCategoryRolloverTest < ActiveSupport::TestCase
 
     recompute!
 
-    assert_equal 0, stored_rollover(second)
-    assert_equal 100, budget_category_for(second).available_to_spend
+    assert_equal(-50, stored_rollover(second))
+    assert_equal 50, budget_category_for(second).available_to_spend
   end
 
   test "a category without the toggle never accumulates a rollover" do
@@ -988,6 +1010,33 @@ class BudgetCategoryRolloverTest < ActiveSupport::TestCase
     assert_equal 0, budget.budget_category_actual_spending(budget_category_for(budget)),
       "a bare refund must not recredit the envelope as a signed -100 today " \
       "(Budget#budget_category_actual_spending floors expense - refund at 0)"
+  end
+
+  # Step 3: RolloverCalculator#leftover_for no longer floors at zero.
+  test "an overspend carries forward as a negative rollover across two transitions" do
+    first = initialized_budget(2.months.ago)
+    allocate(first, 100)
+    spend(150, budget: first)
+
+    second = initialized_budget(1.month.ago)
+    allocate(second, 0)
+
+    recompute!
+
+    assert_equal(-50, stored_rollover(second))
+    second_bc = budget_category_for(second)
+    assert second_bc.rolled_over?, "a negative carry is still a carry, not the absence of one"
+    assert second_bc.over_budget?, "over_budget? must fire from the carry alone, with no spending this period"
+    assert_equal(-50, second_bc.available_to_spend)
+    assert_equal 0, second_bc.percent_of_budget_spent, "nothing was spent THIS period, so 0% of it, despite the deficit"
+
+    third = initialized_budget(Date.current)
+    allocate(third, 0)
+
+    recompute!
+
+    assert_equal(-50, stored_rollover(third),
+      "the deficit survives untouched into a third period with nothing to close it")
   end
 
   private

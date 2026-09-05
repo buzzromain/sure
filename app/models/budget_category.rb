@@ -229,8 +229,12 @@ class BudgetCategory < ApplicationRecord
     super || 0
   end
 
+  # `!= 0`, not `.positive?`: a deficit is still a carried balance, and hiding
+  # it here would silently drop the "rolled over" line from the UI right when
+  # it matters most — explaining why this period is already short before any
+  # new spending.
   def rolled_over?
-    rolled_over_amount.positive?
+    !rolled_over_amount.zero?
   end
 
   # Returns true if this subcategory has no individual budget limit and should use parent's budget
@@ -305,15 +309,19 @@ class BudgetCategory < ApplicationRecord
       return 0 unless parent
 
       parent_budget = (parent[:budgeted_spending] || 0) + parent.rolled_over_amount
-      return 0 if parent_budget == 0 && actual_spending == 0
-      return 100 if parent_budget == 0 && actual_spending > 0
+      return 0 if actual_spending.zero?
+      # A zero-or-negative effective budget is not a ratio to compute — it's
+      # already maximally over. over_budget?/available_to_spend carry the real
+      # signal; this just has to not return nil or a nonsense negative number.
+      return 100 if parent_budget <= 0
+
       (actual_spending.to_f / parent_budget) * 100
     else
       budget_amount = (self[:budgeted_spending] || 0) + rolled_over_amount
-      return 0 if budget_amount == 0 && actual_spending == 0
-      return 0 if budget_amount > 0 && actual_spending == 0
-      return 100 if budget_amount == 0 && actual_spending > 0
-      (actual_spending.to_f / budget_amount) * 100 if budget_amount > 0 && actual_spending > 0
+      return 0 if actual_spending.zero?
+      return 100 if budget_amount <= 0
+
+      (actual_spending.to_f / budget_amount) * 100
     end
   end
 

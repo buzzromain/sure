@@ -174,8 +174,10 @@ class Budget::RolloverCalculator
         .group_by { |bc| bc.category.parent_id }
     end
 
-    # max(0, budgeted + rolled_over − actual): v1 only carries a surplus, a
-    # negative balance stops at the month it happened in.
+    # budgeted + rolled_over − actual, signed: an overspent envelope carries
+    # its deficit into the next period instead of stopping at the month it
+    # happened in, matching what BudgetCategory#over_budget?/#available_to_spend
+    # already report for the current period.
     def leftover_for(budget, budget_category, incoming, ring_fenced_children)
       budgeted = (budget_category[:budgeted_spending] || 0) + incoming
       actual = budget.budget_category_actual_spending(budget_category)
@@ -189,6 +191,6 @@ class Budget::RolloverCalculator
         actual -= budget.budget_category_actual_spending(child)
       end
 
-      [ budgeted - actual, 0 ].max
+      budgeted - actual
     end
 end
