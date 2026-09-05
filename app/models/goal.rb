@@ -33,6 +33,14 @@ class Goal < ApplicationRecord
   # pocket.allocated_amount as its balance.
   belongs_to :pocket, optional: true
   validates :pocket_id, uniqueness: true, allow_nil: true
+  # A third funding source, alongside pocket and goal_accounts: an existing
+  # budget category's rollover envelope. Points at the Category itself, never
+  # at a BudgetCategory row — a BudgetCategory belongs to one specific
+  # month's Budget and its identity changes every period, so a stable
+  # reference has to sit one level up. See #current_funding_budget_category
+  # for how "the current month's envelope" is resolved from it.
+  belongs_to :funding_category, class_name: "Category", optional: true
+  validates :funding_category_id, uniqueness: true, allow_nil: true
   # autosave so earmark (allocated_amount) edits on already-linked accounts
   # persist through goal.save! — without it Rails only saves newly built
   # children, silently dropping changes to existing goal_accounts.
@@ -91,9 +99,10 @@ class Goal < ApplicationRecord
   after_save :reapply_target_after_category_change, if: :expense_categories_changed_in_place?
 
   validate :months_target_must_be_derivable, if: :months_of_expenses_target?
-  validate :must_have_at_least_one_linked_account
+  validate :must_have_exactly_one_funding_source
   validate :linked_accounts_must_be_fundable
   validate :linked_accounts_must_match_goal_currency
+  validate :funding_category_must_match_family_currency
   validate :linked_accounts_must_belong_to_family
   validate :currency_locked_once_linked
   validate :restore_must_not_recreate_whole_account_conflict
@@ -427,6 +436,7 @@ class Goal < ApplicationRecord
     # shapes coexist in the database.
     return completed_amount.to_d if completed_amount.present?
     return pocket.allocated_amount.to_d if pocket_id.present?
+    return (current_funding_budget_category&.available_to_spend || 0).to_d if funding_category_id.present?
 
     @current_balance ||= begin
       matching = linked_accounts.select { |a| a.currency == currency }
@@ -457,6 +467,12 @@ class Goal < ApplicationRecord
       return pocket.allocated_amount.to_d if Array(account_ids).include?(pocket.account_id)
       return 0.to_d
     end
+
+    # A budget envelope isn't held in any one account, by design — see
+    # docs/mettre-de-cote-recommandation-produit-technique.md — so it never
+    # claims a share of an account's balance the way a pocket or a fixed
+    # earmark does.
+    return 0.to_d if funding_category_id.present?
 
     ids = Array(account_ids).to_set
     linked_accounts
@@ -1288,6 +1304,26 @@ class Goal < ApplicationRecord
   end
 
   private
+    # The current month's BudgetCategory row for this goal's funding_category,
+    # or nil. Deliberately read-only: the only way to GUARANTEE that row exists
+    # is Budget.find_or_bootstrap, which writes (creates budget_categories,
+    # reruns Budget::RolloverCalculator) and is never triggered by anything
+    # but a request touching the budget pages/assistant directly — never by
+    # the mere passage of time. Calling it here would turn reading a goal's
+    # balance into a write on whatever page happens to render it first. A
+    # family that hasn't opened this month's budget yet simply reads a
+    # zero-balance envelope, same as every other figure in this app that
+    # depends on an initialized Budget.
+    def current_funding_budget_category
+      return nil unless funding_category_id.present?
+
+      start_date, end_date = Budget.period_for(Date.current, family: family)
+      family.budgets
+            .find_by(user_id: nil, start_date: start_date, end_date: end_date)
+            &.budget_categories
+            &.find_by(category_id: funding_category_id)
+    end
+
     # This goal's amount from one linked account under the active progress
     # basis: net contributions (market-gain-excluded, floored at 0) on the
     # contributions basis, or the allocation-aware backing balance otherwise.
@@ -1525,11 +1561,21 @@ class Goal < ApplicationRecord
       []
     end
 
-    def must_have_at_least_one_linked_account
-      return if pocket_id.present?
-      return unless goal_accounts.reject(&:marked_for_destruction?).empty?
+    # Exactly one funding source, never zero, never more than one. Before
+    # funding_category existed, pocket_id and goal_accounts could already
+    # both be present at once with nothing catching it — current_balance and
+    # backing_within just silently prioritized the pocket. Counting all three
+    # here closes that hole rather than leaving it for a third source to
+    # inherit too.
+    def must_have_exactly_one_funding_source
+      sources = [
+        pocket_id.present?,
+        funding_category_id.present?,
+        goal_accounts.reject(&:marked_for_destruction?).any?
+      ].count(true)
 
-      errors.add(:base, :at_least_one_linked_account_required)
+      errors.add(:base, :at_least_one_linked_account_required) if sources.zero?
+      errors.add(:base, :funding_source_must_be_exclusive) if sources > 1
     end
 
     def linked_accounts_must_be_fundable
@@ -1549,6 +1595,18 @@ class Goal < ApplicationRecord
       return unless progress_basis.blank? || progress_basis == "balance"
 
       self.progress_basis = "contributions"
+    end
+
+    # No conversion, same choice already made for linked accounts: a
+    # household budget is denominated in family.currency (Budget#currency
+    # defaults to it and RolloverCalculator never converts a carry across a
+    # currency change), so a goal in a different currency has nothing
+    # meaningful to read from it.
+    def funding_category_must_match_family_currency
+      return unless funding_category_id.present? && currency.present?
+      return if currency == family.currency
+
+      errors.add(:funding_category, :currency_mismatch)
     end
 
     def linked_accounts_must_match_goal_currency

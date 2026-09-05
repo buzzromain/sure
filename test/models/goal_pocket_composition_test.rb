@@ -53,10 +53,13 @@ class GoalPocketCompositionTest < ActiveSupport::TestCase
                                      currency: "USD", balance: 500)
     pocket = account.pockets.create!(name: "Composed", allocated_amount: 900, currency: "USD")
 
-    goal = Goal.new(family: @family, name: "Composed with leftovers", target_amount: 900, currency: "USD",
-                     pocket: pocket)
-    goal.goal_accounts.build(account: other_account, allocated_amount: 500)
-    goal.save!
+    goal = Goal.create!(family: @family, name: "Composed with leftovers", target_amount: 900, currency: "USD",
+                         pocket: pocket)
+    # Simulates a leftover row from before must_have_exactly_one_funding_source
+    # existed (or direct data manipulation) — created directly on the join
+    # model so it bypasses Goal's own validation, which now refuses to save a
+    # goal in this state going forward.
+    GoalAccount.create!(goal: goal, account: other_account, allocated_amount: 500)
 
     assert_equal 900, Goal.find(goal.id).current_balance,
       "current_balance must read the pocket only, not the pocket PLUS a stale goal_accounts link"
@@ -119,5 +122,94 @@ class GoalPocketCompositionTest < ActiveSupport::TestCase
     # consume! is refused outright for a maintained goal: this is balance
     # tracking, not a spend to record against a target.
     assert_raises(Goal::ConsumptionRefused) { after_payment.consume!(1_200) }
+  end
+
+  # --- A goal linked to a budget category's rollover envelope (funding_category) ---
+
+  test "a goal linked to a funding_category reads the current month's envelope balance" do
+    family = families(:empty)
+    category = family.categories.create!(name: "Insurance", color: "#6172F3")
+
+    budget = Budget.find_or_bootstrap(family, start_date: Date.current)
+    budget.update!(budgeted_spending: 3_000, expected_income: 5_000)
+    bc = budget.budget_categories.find_by!(category: category)
+    bc.update!(budgeted_spending: 100, rollover_enabled: true)
+    bc.update_column(:rolled_over_amount, 200)
+
+    goal = Goal.new(family: family, name: "Annual insurance", target_amount: 1_200, currency: "USD",
+                     funding_category: category)
+    goal.save!
+
+    assert_equal 300, Goal.find(goal.id).current_balance, "100 budgeted + 200 carried, nothing spent yet"
+  end
+
+  test "reading a funding_category-linked goal's balance never bootstraps a Budget" do
+    family = families(:empty)
+    category = family.categories.create!(name: "Insurance", color: "#6172F3")
+
+    goal = Goal.new(family: family, name: "Annual insurance", target_amount: 1_200, currency: "USD",
+                     funding_category: category)
+    goal.save!
+
+    assert_no_difference [ "Budget.count", "BudgetCategory.count" ] do
+      assert_equal 0, Goal.find(goal.id).current_balance,
+        "no Budget exists for this month yet, so the envelope reads as empty rather than bootstrapping one"
+    end
+  end
+
+  test "a funding_category-linked goal backs no account" do
+    family = families(:empty)
+    category = family.categories.create!(name: "Insurance", color: "#6172F3")
+    account = Account.create!(family: family, accountable: Depository.new, name: "Checking",
+                               currency: "USD", balance: 1_000)
+    goal = Goal.new(family: family, name: "Annual insurance", target_amount: 1_200, currency: "USD",
+                     funding_category: category)
+    goal.save!
+
+    assert_equal 0, goal.backing_within([ account.id ]),
+      "a budget envelope isn't held in any one account, by design"
+  end
+
+  test "combining a pocket and a funding_category on the same goal is refused" do
+    account = Account.create!(family: @family, accountable: Depository.new, name: "Shared",
+                               currency: "USD", balance: 1_000)
+    pocket = account.pockets.create!(name: "Side", allocated_amount: 500, currency: "USD")
+
+    goal = Goal.new(family: @family, name: "Two sources", target_amount: 500, currency: "USD",
+                     pocket: pocket, funding_category: categories(:food_and_drink))
+
+    assert_not goal.valid?
+    assert goal.errors.of_kind?(:base, :funding_source_must_be_exclusive)
+  end
+
+  test "combining a pocket and goal_accounts on the same goal is refused (preexisting gap, closed here)" do
+    account = Account.create!(family: @family, accountable: Depository.new, name: "Shared",
+                               currency: "USD", balance: 1_000)
+    pocket = account.pockets.create!(name: "Side", allocated_amount: 500, currency: "USD")
+
+    goal = Goal.new(family: @family, name: "Two sources", target_amount: 500, currency: "USD", pocket: pocket)
+    goal.goal_accounts.build(account: account, allocated_amount: 200)
+
+    assert_not goal.valid?
+    assert goal.errors.of_kind?(:base, :funding_source_must_be_exclusive)
+  end
+
+  test "a funding_category in a different currency than the goal is refused" do
+    goal = Goal.new(family: @family, name: "Mismatched currency", target_amount: 500, currency: "EUR",
+                     funding_category: categories(:food_and_drink))
+
+    assert_not goal.valid?
+    assert goal.errors.of_kind?(:funding_category, :currency_mismatch)
+  end
+
+  test "consume! is refused for a funding_category-linked goal, same as for a pocket-composed one" do
+    family = families(:empty)
+    category = family.categories.create!(name: "Insurance", color: "#6172F3")
+    goal = Goal.new(family: family, name: "Annual insurance", target_amount: 1_200, currency: "USD",
+                     funding_category: category)
+    goal.save!
+
+    error = assert_raises(Goal::ConsumptionRefused) { goal.consume!(50) }
+    assert_equal :no_linked_account, error.reason
   end
 end

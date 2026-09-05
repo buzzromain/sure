@@ -17,6 +17,7 @@ fr:
           attributes:
             base:
               at_least_one_linked_account_required: Sélectionnez au moins un compte pour financer cet objectif.
+              funding_source_must_be_exclusive: Un objectif ne peut être financé que par une seule source à la fois — une enveloppe, un pocket ou des comptes liés, pas plusieurs.
               whole_account_conflict_on_restore: "Impossible de restaurer cet objectif : « %{account_name} » est désormais entièrement affecté à « %{goal_name} ». Indiquez d'abord un montant sur l'un des deux."
             kind:
               locked_while_released: Rouvrez cet objectif avant d'en faire une réserve.
@@ -35,3 +36,5 @@ fr:
               currency_mismatch: Tous les comptes liés doivent partager la même devise.
               must_be_fundable: Tous les comptes liés doivent être des comptes de trésorerie ou d'investissement.
               must_belong_to_family: Les comptes liés doivent appartenir au même foyer que l'objectif.
+            funding_category:
+              currency_mismatch: Le budget de la catégorie de financement doit partager la devise de l'objectif.
