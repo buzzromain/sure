@@ -57,13 +57,12 @@ fr:
       status: Statut
       view_all_transactions: Voir toutes les transactions de catégorie
   budgets:
-    available_cash:
-      heading: Trésorerie disponible
-      subtitle: À côté du plan ci-dessus, pas dedans.
-      available: Disponible en cash
-      earmarked: Déjà fléché vers des objectifs
-      free: Réellement libre
-      goals_link: Voir les objectifs
+    remaining_summary:
+      heading: Reste dans le budget
+      subtitle: Votre plan, report des mois précédents compris.
+      left_to_allocate: Reste à attribuer ce mois
+      carried_over: Report des mois précédents
+      remaining: Reste dans le budget
     switcher:
       aria_label: "Changer de budget"
       household: "Commun"

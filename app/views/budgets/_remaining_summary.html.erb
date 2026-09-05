@@ -1,0 +1,37 @@
+<%# locals: (budget:) %>
+
+<%# available_to_allocate already answers "what did I plan this month"; this
+    panel adds what carried in from previous months so the reader sees the
+    true remaining room in the plan, without a second, unrelated "how much
+    cash do I actually have" figure competing with it on the same page. That
+    question belongs on the account itself (see accounts/pockets/_index),
+    where the reservations are actually enforced. %>
+<div class="w-full bg-container rounded-xl shadow-border-xs p-4">
+  <div class="mb-3">
+    <h2 class="text-sm font-medium text-primary"><%= t(".heading") %></h2>
+    <p class="text-xs text-secondary mt-0.5"><%= t(".subtitle") %></p>
+  </div>
+
+  <dl class="space-y-2">
+    <div class="flex items-baseline justify-between gap-3">
+      <dt class="text-sm text-secondary"><%= t(".left_to_allocate") %></dt>
+      <dd class="text-sm text-secondary tabular-nums privacy-sensitive">
+        <%= format_money budget.available_to_allocate_money %>
+      </dd>
+    </div>
+
+    <div class="flex items-baseline justify-between gap-3">
+      <dt class="text-sm text-secondary"><%= t(".carried_over") %></dt>
+      <dd class="text-sm text-secondary tabular-nums privacy-sensitive">
+        <%= format_money budget.total_rolled_over_money %>
+      </dd>
+    </div>
+
+    <div class="flex items-baseline justify-between gap-3 border-t border-subdued pt-2">
+      <dt class="text-sm font-medium text-primary"><%= t(".remaining") %></dt>
+      <dd class="text-lg font-medium text-primary tabular-nums privacy-sensitive">
+        <%= format_money budget.remaining_with_rollover_money %>
+      </dd>
+    </div>
+  </dl>
+</div>

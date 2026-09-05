@@ -38,13 +38,12 @@ en:
     name:
       custom_range: "%{start} - %{end_date}"
       month_year: "%{month}"
-    available_cash:
-      heading: Cash on hand
-      subtitle: Beside the plan above, not part of it.
-      available: Available in cash
-      earmarked: Already earmarked for goals
-      free: Really free
-      goals_link: View goals
+    remaining_summary:
+      heading: Remaining in the budget
+      subtitle: Your plan, including what carried over from previous months.
+      left_to_allocate: Left to allocate this month
+      carried_over: Carried over from previous months
+      remaining: Remaining in the budget
     show:
       categories:
         amount: Amount

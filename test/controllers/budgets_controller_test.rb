@@ -35,25 +35,15 @@ class BudgetsControllerTest < ActionDispatch::IntegrationTest
     assert_select "a[href=?]", plan_path, count: 0
     assert_select "a[href=?]", budgets_path, minimum: 1
   end
-  # --- Lot A3: cash on hand ---
+  # --- #3218: remaining-in-budget summary ---
 
-  test "the cash panel is hidden without preview access" do
+  test "the remaining-in-budget panel always renders, preview or not" do
     @user.update!(preferences: (@user.preferences || {}).merge("preview_features_enabled" => false))
 
     get budget_url(Budget.date_to_param(Date.current.beginning_of_month))
 
     assert_response :success
-    assert_no_match I18n.t("budgets.available_cash.heading"), response.body
-  end
-
-  test "the cash panel shows what goals have already claimed" do
-    @user.update!(preferences: (@user.preferences || {}).merge("preview_features_enabled" => true))
-
-    get budget_url(Budget.date_to_param(Date.current.beginning_of_month))
-
-    assert_response :success
-    assert_match I18n.t("budgets.available_cash.heading"), response.body
-    assert_match I18n.t("budgets.available_cash.free"), response.body
+    assert_match I18n.t("budgets.remaining_summary.heading"), response.body
   end
 end
 

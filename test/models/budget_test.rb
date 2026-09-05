@@ -480,6 +480,32 @@ class BudgetTest < ActiveSupport::TestCase
     assert_equal 120, budget.total_rolled_over
   end
 
+  # #3218: a single "remaining in the budget" figure, report compris — and
+  # nothing account-side (a Goal's earmark) is allowed to leak into it, the
+  # same isolation the deleted free_cash suite used to guard from the other
+  # direction.
+  test "remaining_with_rollover is available_to_allocate plus total_rolled_over, untouched by account state" do
+    family = families(:dylan_family)
+
+    budget = Budget.find_or_bootstrap(family, start_date: 1.month.ago)
+    budget.update!(budgeted_spending: 4000, expected_income: 6000)
+    budget_category = budget.budget_categories.find_by(category: categories(:food_and_drink))
+    budget_category.update!(budgeted_spending: 500, rollover_enabled: true)
+    budget_category.update_column(:rolled_over_amount, 120)
+    budget.reload
+
+    assert_equal budget.available_to_allocate + budget.total_rolled_over, budget.remaining_with_rollover
+
+    before = budget.remaining_with_rollover
+    account = Account.create!(family: family, accountable: Depository.new, name: "Untouched", currency: "USD", balance: 5_000)
+    goal = Goal.new(family: family, name: "Should not leak in", target_amount: 1_000, currency: "USD")
+    goal.goal_accounts.build(account: account, allocated_amount: 1_000)
+    goal.save!
+
+    assert_equal before, Budget.find(budget.id).remaining_with_rollover,
+      "an account-side Goal earmark must not move a figure that only reads the plan"
+  end
+
   test "copy_from skips categories that dont exist in target" do
     family = families(:dylan_family)
 
