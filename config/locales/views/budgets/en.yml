@@ -1,5 +1,15 @@
 ---
 en:
+  budget_adjustments:
+    reallocate:
+      errors:
+        non_positive_amount: Enter an amount greater than zero.
+        uncategorized: Uncategorized is not a real envelope, so reserve cannot move in or out of it.
+        same_category: Pick a different category to move the reserve to.
+        different_families: Both categories must belong to the same family.
+        parent_child: Reserve cannot move between a category and its own subcategory — adjust the subcategory directly.
+        different_currencies: Both categories must use the same currency.
+        insufficient_reserve: That is more than this category has in reserve.
   budgets:
     switcher:
       aria_label: "Switch budget"
@@ -80,6 +90,7 @@ en:
       percent_set: "%{percent} set"
     budget_category:
       rolled_over: "+%{amount} rolled over"
+      adjustments_balance: "%{amount} adjusted"
     budget_category_form:
       monthly_average: "%{amount}/m avg"
       rollover_label: Rollover
@@ -129,6 +140,7 @@ en:
       left: "left"
       budgeted: "Budgeted"
       rolled_over: "Rolled over"
+      adjustments_balance: "Adjustments"
       monthly_average_spending: "Monthly average spending"
       monthly_median_spending: "Monthly median spending"
       recent_transactions: "Recent Transactions"

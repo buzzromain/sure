@@ -96,6 +96,15 @@
                 </dd>
               </div>
             <% end %>
+
+            <% if @budget_category.adjusted? %>
+              <div class="flex items-center justify-between text-sm">
+                <dt class="text-secondary"><%= t(".adjustments_balance") %></dt>
+                <dd class="text-primary font-medium privacy-sensitive">
+                  <%= format_money @budget_category.adjustments_balance_money %>
+                </dd>
+              </div>
+            <% end %>
           <% end %>
 
           <div class="flex items-center justify-between text-sm">

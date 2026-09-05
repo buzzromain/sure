@@ -201,6 +201,21 @@ class BudgetCategoriesControllerTest < ActionDispatch::IntegrationTest
     assert_equal 700.0, @parent_budget_category.budgeted_spending.to_f
   end
 
+  test "the budget summary and category drilldown render an adjustments_balance" do
+    BudgetAdjustment.record_opening_balance!(category: @parent_category, amount: 150, family: @family, currency: "USD")
+    Budget::RolloverCalculator.new(family: @family, user: @budget.user).recompute!
+    assert @parent_budget_category.reload.adjusted?
+
+    get budget_path(Budget.date_to_param(@budget.start_date))
+    assert_response :success
+    expected_amount = ApplicationController.helpers.format_money(@parent_budget_category.adjustments_balance_money)
+    assert_includes @response.body, I18n.t("budget_categories.budget_category.adjustments_balance", amount: expected_amount)
+
+    get budget_budget_category_path(@budget, @parent_budget_category)
+    assert_response :success
+    assert_includes @response.body, I18n.t("budget_categories.show.adjustments_balance")
+  end
+
   test "show drilldown excludes BUDGET_EXCLUDED_KINDS transfers from recent transactions" do
     # Issue #1059: a matched depository <-> CC pair becomes
     # (cc_payment outflow + funds_movement inflow). Both kinds are in

@@ -45,7 +45,7 @@ class BudgetCategory < ApplicationRecord
   validate :complete_to_requires_a_funding_goal, if: :complete_to?
 
   monetize :budgeted_spending, :available_to_spend, :avg_monthly_expense, :median_monthly_expense, :actual_spending,
-           :rolled_over_amount, :contribution_amount
+           :rolled_over_amount, :contribution_amount, :adjustments_balance
 
   class Group
     attr_reader :budget_category, :budget_subcategories
@@ -308,12 +308,28 @@ class BudgetCategory < ApplicationRecord
     super || 0
   end
 
+  # Unlike rolled_over_amount, never gated by rollover_enabled?: an opening
+  # balance or a reallocated reserve is a standing fact about the envelope,
+  # not something the ordinary rollover toggle should be able to hide or
+  # discard. Still gated on inherits_parent_budget? -- a subcategory sharing
+  # its parent's budget has no reserve of its own to report, same as
+  # rolled_over_amount.
+  def adjustments_balance
+    return 0 if inherits_parent_budget?
+
+    super || 0
+  end
+
   # `!= 0`, not `.positive?`: a deficit is still a carried balance, and hiding
   # it here would silently drop the "rolled over" line from the UI right when
   # it matters most — explaining why this period is already short before any
   # new spending.
   def rolled_over?
     !rolled_over_amount.zero?
+  end
+
+  def adjusted?
+    !adjustments_balance.zero?
   end
 
   # Returns true if this subcategory has no individual budget limit and should use parent's budget
@@ -347,10 +363,14 @@ class BudgetCategory < ApplicationRecord
       parent.available_to_spend
     elsif subcategory?
       # Subcategory with individual limit
-      (self[:budgeted_spending] || 0) + rolled_over_amount - actual_spending
+      (self[:budgeted_spending] || 0) + rolled_over_amount + adjustments_balance - actual_spending
     else
-      # Parent category
-      parent_budget = (self[:budgeted_spending] || 0) + rolled_over_amount
+      # Parent category. adjustments_balance is read by exact category_id,
+      # never aggregated over a subtree the way budgeted_spending is, so
+      # unlike subcategories_individual_budgets below, a ring-fenced child's
+      # own adjustments_balance is already disjoint from its parent's --
+      # nothing to subtract out here.
+      parent_budget = (self[:budgeted_spending] || 0) + rolled_over_amount + adjustments_balance
 
       # Get subcategories with and without individual limits
       subcategories_with_limits = subcategories.reject(&:inherits_parent_budget?)

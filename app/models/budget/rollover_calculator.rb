@@ -67,11 +67,26 @@ class Budget::RolloverCalculator
       # simply drops out of `carry` — its history is gone, which is what
       # deleting a category means.
       carry = {}
+      # category_id => [balance, currency]. Independent of `carry` above and
+      # never gated by rollover_enabled? -- an opening balance or a
+      # reallocated reserve must not vanish just because a category's
+      # ordinary monthly-surplus rollover is switched off. See
+      # BudgetAdjustment and BudgetCategory#adjustments_balance.
+      adjustments_carry = {}
+      # End of the previous period actually visited (nil for the first).
+      # BudgetAdjustment sums are windowed against this rather than against
+      # the previous calendar month, so a gap month (budget never
+      # initialized) doesn't drop an adjustment dated inside it -- the next
+      # initialized period's window reaches back and absorbs it, same
+      # "gap passes through untouched" semantics `carry` already has via
+      # `chain`/`initialized_budgets`.
+      period_end_before = nil
 
       chain(from).each do |budget|
         budget.income_statement_accounts = household_account_scope if user.nil?
 
         next_carry = {}
+        next_adjustments_carry = {}
         ring_fenced_children = ring_fenced_children_by_parent(budget)
 
         budget.budget_categories.each do |budget_category|
@@ -80,10 +95,14 @@ class Budget::RolloverCalculator
           next if budget_category.inherits_parent_budget?
 
           incoming = incoming_carry(carry, budget_category)
+          incoming_adjustments = incoming_adjustments_carry(adjustments_carry, budget_category)
+          period_adjustments = adjustments_delta_for(budget_category, since: period_end_before, through: budget.end_date)
+          new_adjustments_balance = incoming_adjustments + period_adjustments
 
-          if budget_category[:rolled_over_amount] != incoming
+          if budget_category[:rolled_over_amount] != incoming || budget_category[:adjustments_balance] != new_adjustments_balance
             updates << budget_category.attributes.merge(
               "rolled_over_amount" => incoming,
+              "adjustments_balance" => new_adjustments_balance,
               "updated_at" => now
             )
           end
@@ -129,9 +148,12 @@ class Budget::RolloverCalculator
           end
 
           next_carry[budget_category.category_id] = [ outgoing, budget_category.currency ]
+          next_adjustments_carry[budget_category.category_id] = [ new_adjustments_balance, budget_category.currency ]
         end
 
         carry = next_carry
+        adjustments_carry = next_adjustments_carry
+        period_end_before = budget.end_date
       end
 
       # The full attribute set is what makes the INSERT branch legal
@@ -140,7 +162,7 @@ class Budget::RolloverCalculator
       # changed an allocation between our read and this write must not have it
       # clobbered by the stale value we loaded.
       if updates.any?
-        BudgetCategory.upsert_all(updates, unique_by: :id, update_only: %w[rolled_over_amount updated_at])
+        BudgetCategory.upsert_all(updates, unique_by: :id, update_only: %w[rolled_over_amount adjustments_balance updated_at])
       end
     end
 
@@ -150,10 +172,14 @@ class Budget::RolloverCalculator
     # still needs clearing. nil -- the common case, families that never
     # turned rollover on -- costs one query and does nothing.
     def first_relevant_budget_date
-      initialized_budgets
+      from_rollover = initialized_budgets
         .joins("INNER JOIN budget_categories ON budget_categories.budget_id = budgets.id")
-        .where("budget_categories.rollover_enabled OR budget_categories.rolled_over_amount <> 0")
+        .where("budget_categories.rollover_enabled OR budget_categories.rolled_over_amount <> 0 OR budget_categories.adjustments_balance <> 0")
         .minimum(:start_date)
+
+      from_adjustments = BudgetAdjustment.where(family_id: family.id, user_id: user&.id).minimum(:effective_on)
+
+      [ from_rollover, from_adjustments ].compact.min
     end
 
     # Walking back to `oldest_valid_budget_date` every time would read an
@@ -186,6 +212,27 @@ class Budget::RolloverCalculator
       return 0 if amount.nil? || currency != budget_category.currency
 
       amount
+    end
+
+    # Unlike incoming_carry, never gated by rollover_enabled? -- see
+    # adjustments_carry above.
+    def incoming_adjustments_carry(adjustments_carry, budget_category)
+      amount, currency = adjustments_carry[budget_category.category_id]
+      return 0 if amount.nil? || currency != budget_category.currency
+
+      amount
+    end
+
+    # Sum of this category's BudgetAdjustments effective in (since, through]
+    # -- open on the low end so the very first period a chain walk considers
+    # still picks up every adjustment recorded before it, not just ones after
+    # some arbitrary boundary.
+    def adjustments_delta_for(budget_category, since:, through:)
+      scope = BudgetAdjustment.where(family_id: family.id, user_id: user&.id,
+                                      category_id: budget_category.category_id,
+                                      currency: budget_category.currency)
+      scope = scope.where("effective_on > ?", since) if since
+      scope.where("effective_on <= ?", through).sum(:amount)
     end
 
     # The household chain has no owner to scope actuals by, and IncomeStatement

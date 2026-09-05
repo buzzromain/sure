@@ -153,6 +153,34 @@ class BudgetCategoryTest < ActiveSupport::TestCase
     assert_equal 200, @subcategory_with_limit_bc.available_to_spend
   end
 
+  test "adjustments_balance adds into available_to_spend without leaking across parent/child" do
+    @parent_budget_category.update_column(:adjustments_balance, 100)
+    @subcategory_with_limit_bc.update_column(:adjustments_balance, 50)
+    # Ignored: an inheriting subcategory has no reserve of its own to report.
+    @subcategory_inheriting_bc.update_column(:adjustments_balance, 999)
+
+    @budget.stubs(:budget_category_actual_spending).with(@parent_budget_category).returns(150)
+    @budget.stubs(:budget_category_actual_spending).with(@subcategory_with_limit_bc).returns(100)
+    @budget.stubs(:budget_category_actual_spending).with(@subcategory_inheriting_bc).returns(50)
+
+    # parent_budget = 1000 + 0 (rollover disabled) + 100 (own adjustment) = 1100
+    # shared_pool = 1100 - 300 (subcategory_with_limit's budgeted_spending only) = 800
+    # shared_pool_spending = 150 - 100 = 50
+    # available = 800 - 50 = 750 -- the child's own 50 adjustment never enters this.
+    assert_equal 750, @parent_budget_category.available_to_spend
+
+    # Delegates wholly to the parent -- its own (ignored) 999 plays no part.
+    assert_equal 750, @subcategory_inheriting_bc.available_to_spend
+
+    # 300 (budget) + 0 (rollover) + 50 (its own adjustment) - 100 (spending) = 250
+    assert_equal 250, @subcategory_with_limit_bc.available_to_spend
+
+    assert @parent_budget_category.adjusted?
+    assert @subcategory_with_limit_bc.adjusted?
+    # Gated the same way as adjustments_balance itself.
+    assert_not @subcategory_inheriting_bc.adjusted?
+  end
+
   # Step 3: rolled_over_amount can now be negative (the DB check constraint
   # that used to forbid it is gone). percent_of_budget_spent must never
   # return nil or a raw negative number once the effective budget itself
@@ -848,6 +876,100 @@ class BudgetCategoryRolloverTest < ActiveSupport::TestCase
     assert_equal 0, stored_rollover(second)
   end
 
+  test "an opening balance is available immediately and carries forward regardless of rollover" do
+    first = initialized_budget(2.months.ago)
+    allocate(first, 100, rollover: false)
+
+    BudgetAdjustment.record_opening_balance!(category: @category, amount: 250, family: @family, currency: "USD", effective_on: first.start_date)
+
+    second = initialized_budget(1.month.ago)
+    allocate(second, 100, rollover: false)
+
+    recompute!
+
+    # Effective within the first period already, so it shows up there too.
+    assert_equal 250, stored_adjustments_balance(first)
+    assert_equal 350, budget_category_for(first).available_to_spend
+
+    # Carries forward into the next month even though rollover is off --
+    # only the ordinary surplus carry is gated by the toggle.
+    assert_equal 0, stored_rollover(second)
+    assert_equal 250, stored_adjustments_balance(second)
+    assert_equal 350, budget_category_for(second).available_to_spend
+  end
+
+  test "a reallocation moves adjustments_balance and available_to_spend on both sides" do
+    other_category = @family.categories.create!(name: "Car repairs", color: "#6172F3")
+
+    # Current month, not a past one: reallocate! stamps effective_on as
+    # today, so the period it lands in must actually contain today.
+    budget = initialized_budget(Date.current)
+    allocate(budget, 0, rollover: false)
+    other_bc = budget.budget_categories.find_by!(category: other_category)
+    other_bc.update!(rollover_enabled: false)
+
+    BudgetAdjustment.record_opening_balance!(category: @category, amount: 200, family: @family, currency: "USD", effective_on: budget.start_date)
+    recompute!
+    assert_equal 200, stored_adjustments_balance(budget)
+
+    BudgetAdjustment.reallocate!(from_category: @category, to_category: other_category, amount: 80, family: @family)
+    recompute!
+
+    assert_equal 120, stored_adjustments_balance(budget)
+    assert_equal 80, other_bc.reload[:adjustments_balance]
+    assert_equal 120, budget_category_for(budget).available_to_spend
+    assert_equal 80, other_bc.available_to_spend
+  end
+
+  test "adjustments are excluded from the carry across a currency change, same as rollover" do
+    first = initialized_budget(2.months.ago)
+    allocate(first, 100, rollover: false)
+    BudgetAdjustment.record_opening_balance!(category: @category, amount: 250, family: @family, currency: "USD", effective_on: first.start_date)
+
+    @family.update!(currency: "EUR")
+    second = initialized_budget(1.month.ago)
+    allocate(second, 100, rollover: false)
+
+    recompute!
+
+    assert_equal 0, stored_adjustments_balance(second)
+  end
+
+  test "a gap month does not drop an adjustment dated inside it" do
+    first = initialized_budget(3.months.ago)
+    allocate(first, 100, rollover: false)
+
+    # Bootstrapped but never initialized -- a month the user skipped.
+    gap = Budget.find_or_bootstrap(@family, start_date: 2.months.ago)
+    BudgetAdjustment.record_opening_balance!(category: @category, amount: 250, family: @family, currency: "USD", effective_on: gap.start_date)
+
+    third = initialized_budget(1.month.ago)
+    allocate(third, 100, rollover: false)
+
+    recompute!
+
+    assert_equal 250, stored_adjustments_balance(third)
+  end
+
+  test "one member's personal chain's adjustments do not contaminate another's" do
+    @family.update!(personal_budgets: true)
+    josh = users(:josh)
+    ann = users(:ann)
+
+    josh_first = initialized_budget(1.month.ago, user: josh)
+    allocate(josh_first, 100, rollover: false)
+    BudgetAdjustment.record_opening_balance!(category: @category, amount: 300, family: @family, user: josh, currency: "USD", effective_on: josh_first.start_date)
+
+    ann_first = initialized_budget(1.month.ago, user: ann)
+    allocate(ann_first, 40, rollover: false)
+
+    Budget::RolloverCalculator.new(family: @family, user: josh).recompute!
+    Budget::RolloverCalculator.new(family: @family, user: ann).recompute!
+
+    assert_equal 300, stored_adjustments_balance(josh_first)
+    assert_equal 0, stored_adjustments_balance(ann_first)
+  end
+
   test "deleting a category removes it from every month of the chain" do
     first = initialized_budget(2.months.ago)
     allocate(first, 100)
@@ -1267,6 +1389,10 @@ class BudgetCategoryRolloverTest < ActiveSupport::TestCase
 
     def budget_category_for(budget)
       BudgetCategory.find_by!(budget_id: budget.id, category: @category)
+    end
+
+    def stored_adjustments_balance(budget)
+      budget_category_for(budget)[:adjustments_balance]
     end
 
     def stored_rollover(budget)

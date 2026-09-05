@@ -5,6 +5,9 @@ class Category < ApplicationRecord
   belongs_to :family
 
   has_many :budget_categories, dependent: :destroy
+  # A budget adjustment has no existence independent of the category it
+  # adjusts, the same reasoning as budget_categories above.
+  has_many :budget_adjustments, dependent: :destroy
   # A reserve sized on this category simply stops counting it. Without this the
   # foreign key (NO ACTION) would refuse the delete outright, and taking a
   # category away would fail on a goal the user may not even remember making.

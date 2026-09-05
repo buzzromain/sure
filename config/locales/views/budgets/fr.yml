@@ -1,5 +1,15 @@
 ---
 fr:
+  budget_adjustments:
+    reallocate:
+      errors:
+        non_positive_amount: Indiquez un montant supérieur à zéro.
+        uncategorized: "« Non classé » n'est pas une vraie enveloppe : la réserve ne peut ni y entrer ni en sortir."
+        same_category: Choisissez une autre catégorie de destination.
+        different_families: Les deux catégories doivent appartenir à la même famille.
+        parent_child: La réserve ne peut pas circuler entre une catégorie et sa propre sous-catégorie — ajustez directement la sous-catégorie.
+        different_currencies: Les deux catégories doivent utiliser la même devise.
+        insufficient_reserve: C'est plus que ce que cette catégorie a en réserve.
   budget_categories:
     allocation_progress:
       budget_exceeded_html: Budget dépassé par <span class="text-red-500 Privacy-sensitive">%{amount}</span>
@@ -8,6 +18,7 @@ fr:
       percent_set: "%{percent} défini"
     budget_category:
       rolled_over: "+%{amount} de report"
+      adjustments_balance: "%{amount} d'ajustement"
     budget_category_form:
       monthly_average: "%{amount}/mois en moyenne"
       rollover_label: Report
@@ -67,6 +78,7 @@ fr:
       overview: Aperçu
       recent_transactions: Transactions récentes
       rolled_over: Reporté
+      adjustments_balance: Ajustements
       spending: "%{date} dépenses"
       status: Statut
       view_all_transactions: Voir toutes les transactions de catégorie
