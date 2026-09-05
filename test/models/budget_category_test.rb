@@ -153,6 +153,18 @@ class BudgetCategoryTest < ActiveSupport::TestCase
     assert_equal 200, @subcategory_with_limit_bc.available_to_spend
   end
 
+  # Invariants still to add here, once the DB constraint below is lifted
+  # (docs/mettre-de-cote-recommandation-produit-technique.md, plan step 3):
+  #   - a negative rolled_over_amount survives and carries into the next period
+  #   - percent_of_budget_spent never returns nil or a negative percentage
+  #     once own-budget or parent_budget can go negative (see the two exact
+  #     failure branches quoted in the plan)
+  #   - over_budget? reports true from a negative carry alone, with no new
+  #     spending in the current period
+  # Not testable today: `chk_budget_categories_rolled_over_amount_non_negative`
+  # on budget_categories.rolled_over_amount makes a negative rollover a DB
+  # error, not a bad calculation — there is nothing to write a red test against
+  # until that constraint is removed.
   test "percent_of_budget_spent for inheriting subcategory uses parent budget" do
     # Mock spending
     @budget.stubs(:budget_category_actual_spending).with(@subcategory_inheriting_bc).returns(100)
@@ -962,6 +974,20 @@ class BudgetCategoryRolloverTest < ActiveSupport::TestCase
     assert_not budget_category_for(middle).reload.rollover_enabled?
     assert budget_category_for(first).reload.rollover_enabled?,
            "an earlier month keeps the choice it was given"
+  end
+
+  # Reference test for docs/mettre-de-cote-recommandation-produit-technique.md,
+  # step 1: fixes today's flooring behaviour before step 4 considers a signed
+  # activity figure. If this ever needs to change, it is because step 4 is
+  # underway, not because the test was wrong.
+  test "a refund with no matching expense in the same period floors actual_spending at zero" do
+    budget = initialized_budget(Date.current)
+    allocate(budget, 100)
+    create_transaction(account: @account, date: budget.start_date, amount: -100, category: @category)
+
+    assert_equal 0, budget.budget_category_actual_spending(budget_category_for(budget)),
+      "a bare refund must not recredit the envelope as a signed -100 today " \
+      "(Budget#budget_category_actual_spending floors expense - refund at 0)"
   end
 
   private
