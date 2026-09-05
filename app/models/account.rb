@@ -537,20 +537,34 @@ class Account < ApplicationRecord
                .to_d
   end
 
-  # Headroom left to earmark toward goals before fixed allocations exceed the
-  # balance. Negative means the account is over-earmarked. Intended to back a
-  # non-blocking over-allocation warning (UI is a follow-up). Mirrors
-  # Budget#available_to_allocate.
+  # Everything already spoken for on this account across BOTH independent
+  # reservation mechanisms — Pocket and Goal. Pocket's own cap
+  # (total_pockets_within_account_balance) and Account's free-balance figures
+  # used to each sum only their own table, so a Pocket and a GoalAccount could
+  # each independently claim up to the whole balance without ever seeing each
+  # other. `excluding_pocket_id` lets a Pocket ask "how much room is left for
+  # ME", the same way total_pockets_within_account_balance always excluded its
+  # own sibling sum.
+  def reserved_total(excluding_pocket_id: nil)
+    scope = pockets
+    scope = scope.where.not(id: excluding_pocket_id) if excluding_pocket_id
+    scope.sum(:allocated_amount).to_d + goal_earmarked_total
+  end
+
+  # Headroom left to earmark toward goals or pockets before reservations
+  # exceed the balance. Negative means the account is over-committed. Intended
+  # to back a non-blocking over-allocation warning (UI is a follow-up).
+  # Mirrors Budget#available_to_allocate.
   def free_to_earmark
-    balance.to_d - goal_earmarked_total
+    balance.to_d - reserved_total
   end
 
-  def free_balance(pockets_total = pockets.sum(:allocated_amount))
-    balance.to_d - pockets_total.to_d
+  def free_balance
+    balance.to_d - reserved_total
   end
 
-  def pockets_overflow?(pockets_total = pockets.sum(:allocated_amount))
-    free_balance(pockets_total).negative?
+  def pockets_overflow?
+    free_balance.negative?
   end
 
   def logo_url

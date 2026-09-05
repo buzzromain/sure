@@ -82,34 +82,14 @@ class Pocket < ApplicationRecord
   def recompute!
     total = manual_movement_total
     total += tagged_transaction_total(tag_id) if tag_id.present?
-    update_column(:allocated_amount, total)
+    # Floored at 0: an `outflows`/`both` tag can now net negative (a tagged
+    # expense debits the pocket), and this writes via update_column, which
+    # skips the allocated_amount >= 0 validation.
+    update_column(:allocated_amount, [ total, 0 ].max)
   end
 
   def manual_movement_total
     movements.sum(:amount)
-  end
-
-  # Full recompute (via recompute!) rather than an incremental adjust_by:
-  # incrementally adding/subtracting per-tagging deltas can diverge from the aggregate
-  # for fill_direction "both" (each step clamps at 0, whereas the aggregate only floors
-  # the net total at 0 — order of tagging/untagging can then produce different results).
-  # recompute! uses update_column, same as increment!/decrement! did, so it
-  # still skips AR callbacks/validations and avoids re-triggering the Tagging callbacks
-  # that called these methods.
-  def apply_tagging(tagging)
-    delta = tagging_transaction_delta(tagging)
-    return unless delta
-
-    recompute!
-  end
-
-  # Must run after the Tagging row is actually deleted (see Tagging#unfill_linked_pocket,
-  # registered as after_destroy) so the aggregate query in recompute! excludes it.
-  def reverse_tagging(tagging)
-    delta = tagging_transaction_delta(tagging)
-    return unless delta
-
-    recompute!
   end
 
   # The explicit-transfer counterpart to tag-fill: a deliberate "move this
@@ -123,8 +103,7 @@ class Pocket < ApplicationRecord
     raise MovementRefused.new(:non_positive) unless amount.positive?
 
     with_lock do
-      others_total = account.pockets.where.not(id: id).sum(:allocated_amount)
-      room = account.balance.to_d - others_total
+      room = account.balance.to_d - account.reserved_total(excluding_pocket_id: id)
       raise MovementRefused.new(:exceeds_account_balance) if allocated_amount.to_d + amount > room
 
       movements.create!(amount: amount, note: note)
@@ -221,7 +200,17 @@ class Pocket < ApplicationRecord
           Entry.from(subq, :deduplicated_entries)
                .pick(Arel.sql("GREATEST(0, COALESCE(SUM(-amount), 0))"))
                .to_d
+        elsif fill_direction == "outflows"
+          # A tagged expense DEBITS the pocket — this is money spent FROM the
+          # reserve, not money saved toward it. entries.amount is positive for
+          # an expense (DB convention), so negating the sum gives the debit
+          # directly. recompute! floors the combined total at 0.
+          subq = subq.where(direction_condition)
+          Entry.from(subq, :deduplicated_entries)
+               .pick(Arel.sql("-COALESCE(SUM(amount), 0)"))
+               .to_d
         else
+          # inflows: a tagged deposit credits the pocket.
           subq = subq.where(direction_condition)
           Entry.from(subq, :deduplicated_entries)
                .pick(Arel.sql("COALESCE(SUM(ABS(amount)), 0)"))
@@ -230,31 +219,13 @@ class Pocket < ApplicationRecord
       end
     end
 
-    # Returns a signed delta: positive = add to pocket, negative = subtract from pocket.
-    def tagging_transaction_delta(tagging)
-      return nil unless tagging.taggable_type == "Transaction"
-
-      entry = tagging.taggable.entry
-      return nil unless entry
-      return nil unless entry.currency == currency
-
-      amount = entry.amount
-      return nil unless amount
-
-      case fill_direction
-      when "inflows"  then amount < 0 ? amount.abs : nil  # income only, always positive
-      when "outflows" then amount > 0 ? amount : nil      # expense only, always positive
-      else -amount  # income (neg in DB) → positive delta; expense (pos in DB) → negative delta
-      end
-    end
-
     def total_pockets_within_account_balance
       return unless account && allocated_amount
 
-      sibling_total = account.pockets.where.not(id: id).sum(:allocated_amount)
-      if sibling_total + allocated_amount > account.balance
+      room = account.balance.to_d - account.reserved_total(excluding_pocket_id: id)
+      if allocated_amount > room
         errors.add(:allocated_amount, :exceeds_account_balance,
-          available: account.balance - sibling_total,
+          available: room,
           currency: account.currency)
       end
     end
