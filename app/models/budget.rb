@@ -122,13 +122,21 @@ class Budget < ApplicationRecord
 
     # Create missing categories
     inherited_rollover = inherited_rollover_flags(categories_to_add)
+    inherited_contributions = inherited_contribution_configs(categories_to_add)
 
     categories_to_add.each do |category_id|
+      contribution_amount = inherited_contributions[category_id]
+
       budget_categories.create!(
         category: current_categories_by_id.fetch(category_id),
-        budgeted_spending: 0,
+        # A standing fixed contribution starts the period already funded --
+        # this IS "apply the recurring contribution once per period" (the
+        # once being right here, at the one moment this row is born).
+        budgeted_spending: contribution_amount || 0,
         currency: family.currency,
-        rollover_enabled: inherited_rollover.fetch(category_id, false)
+        rollover_enabled: inherited_rollover.fetch(category_id, false),
+        contribution_mode: contribution_amount ? "fixed" : "manual",
+        contribution_amount: contribution_amount
       )
     end
 
@@ -151,6 +159,21 @@ class Budget < ApplicationRecord
     source.budget_categories
       .where(category_id: category_ids, rollover_enabled: true)
       .each_with_object({}) { |bc, flags| flags[bc.category_id] = true }
+  end
+
+  # Same standing-choice inheritance as inherited_rollover_flags, for a fixed
+  # recurring contribution: { category_id => contribution_amount }, only for
+  # categories currently configured as "fixed" in the most recent initialized
+  # budget of the same owner.
+  def inherited_contribution_configs(category_ids)
+    return {} if category_ids.empty?
+
+    source = most_recent_initialized_budget
+    return {} unless source
+
+    source.budget_categories
+      .where(category_id: category_ids, contribution_mode: "fixed")
+      .each_with_object({}) { |bc, configs| configs[bc.category_id] = bc.contribution_amount }
   end
 
   def uncategorized_budget_category

@@ -40,7 +40,19 @@ class BudgetCategoriesController < ApplicationController
       # flag off and had nothing to inherit, so the chain stopped there.
       @budget_category.propagate_rollover_choice_forward!
     end
-    @budget_category.update_budgeted_spending!(budgeted_spending_param)
+    unless contribution_mode_param.nil?
+      @budget_category.update!(contribution_mode: contribution_mode_param, contribution_amount: contribution_amount_param)
+      @budget_category.propagate_contribution_choice_forward!
+    end
+
+    # A fixed contribution IS this period's allocation -- the amount field is
+    # disabled client-side in that mode (see budget_category_contribution_controller.js),
+    # so budgeted_spending_param would otherwise submit a stale/blank value.
+    if @budget_category.fixed?
+      @budget_category.update_budgeted_spending!(@budget_category.contribution_amount)
+    else
+      @budget_category.update_budgeted_spending!(budgeted_spending_param)
+    end
 
     # Allocations and the rollover toggle both feed the chain, so recompute
     # it here rather than on every transaction change: the budget page is
@@ -99,6 +111,17 @@ class BudgetCategoriesController < ApplicationController
       return nil unless permitted.key?(:rollover_enabled)
 
       ActiveModel::Type::Boolean.new.cast(permitted[:rollover_enabled])
+    end
+
+    def contribution_mode_param
+      permitted = params.require(:budget_category).permit(:contribution_mode)
+      return nil unless permitted.key?(:contribution_mode)
+
+      permitted[:contribution_mode]
+    end
+
+    def contribution_amount_param
+      params.require(:budget_category).permit(:contribution_amount).fetch(:contribution_amount, nil).presence
     end
 
     def budgeted_spending_param

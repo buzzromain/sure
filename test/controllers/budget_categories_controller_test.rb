@@ -149,6 +149,31 @@ class BudgetCategoriesControllerTest < ActionDispatch::IntegrationTest
     assert_equal 600.0, @parent_budget_category.budgeted_spending.to_f
   end
 
+  test "setting a fixed contribution drives this month's allocation and reaches an already-open future month" do
+    future = Budget.find_or_bootstrap(@family, start_date: 1.month.from_now)
+    future.update!(budgeted_spending: 1000, expected_income: 2000)
+    future_bc = future.budget_categories.find_by!(category: @parent_category)
+
+    patch budget_budget_category_path(@budget, @parent_budget_category),
+          params: { budget_category: { contribution_mode: "fixed", contribution_amount: 100 } },
+          as: :turbo_stream
+
+    assert_response :success
+    assert_equal "fixed", @parent_budget_category.reload.contribution_mode
+    assert_equal 100.0, @parent_budget_category.budgeted_spending.to_f
+    assert_equal 100.0, future_bc.reload.budgeted_spending.to_f
+  end
+
+  test "updating budgeted_spending without touching contribution_mode leaves it as it was" do
+    patch budget_budget_category_path(@budget, @parent_budget_category),
+          params: { budget_category: { budgeted_spending: 700 } },
+          as: :turbo_stream
+
+    assert_response :success
+    assert_equal "manual", @parent_budget_category.reload.contribution_mode
+    assert_equal 700.0, @parent_budget_category.budgeted_spending.to_f
+  end
+
   test "show drilldown excludes BUDGET_EXCLUDED_KINDS transfers from recent transactions" do
     # Issue #1059: a matched depository <-> CC pair becomes
     # (cc_payment outflow + funds_movement inflow). Both kinds are in

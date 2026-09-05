@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_05_150000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_05_160000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -364,6 +364,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_05_150000) do
     t.uuid "budget_id", null: false
     t.decimal "budgeted_spending", precision: 19, scale: 4, null: false
     t.uuid "category_id", null: false
+    t.decimal "contribution_amount", precision: 19, scale: 4
+    t.string "contribution_mode", default: "manual", null: false
     t.datetime "created_at", null: false
     t.string "currency", null: false
     t.decimal "rolled_over_amount", precision: 19, scale: 4, default: "0.0", null: false
@@ -372,6 +374,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_05_150000) do
     t.index ["budget_id", "category_id"], name: "index_budget_categories_on_budget_id_and_category_id", unique: true
     t.index ["budget_id"], name: "index_budget_categories_on_budget_id"
     t.index ["category_id"], name: "index_budget_categories_on_category_id"
+    t.check_constraint "contribution_mode::text = ANY (ARRAY['manual'::character varying::text, 'fixed'::character varying::text])", name: "chk_budget_categories_contribution_mode_enum"
   end
 
   create_table "budget_shares", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|

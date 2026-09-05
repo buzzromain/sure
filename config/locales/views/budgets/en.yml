@@ -86,6 +86,10 @@ en:
       rollover_title: Keep this category's unspent money from one month to the next
       shared_placeholder: Shared
       shared_title: Leave empty to share parent's budget
+      contribution_title: Recurring contribution
+      contribution_modes:
+        manual: "Manual"
+        fixed: "Fixed"
     confirm_button:
       confirm: "Confirm"
     move:

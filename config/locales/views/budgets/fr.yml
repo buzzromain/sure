@@ -14,6 +14,10 @@ fr:
       rollover_title: Conserver d'un mois sur l'autre ce que cette catégorie n'a pas dépensé
       shared_placeholder: Partagé
       shared_title: Laisser vide pour partager le budget des parents
+      contribution_title: Contribution récurrente
+      contribution_modes:
+        manual: Manuel
+        fixed: Fixe
     confirm_button:
       confirm: Confirmer
     goals:

@@ -552,6 +552,28 @@ class BudgetCategoryTest < ActiveSupport::TestCase
 
     BudgetCategory.move_allocation!(from: @parent_budget_category, to: destination, amount: 10)
   end
+
+  test "contribution_amount is required and must be positive in fixed mode" do
+    @parent_budget_category.contribution_mode = "fixed"
+
+    assert_not @parent_budget_category.valid?
+    assert_includes @parent_budget_category.errors[:contribution_amount], "is not a number"
+
+    @parent_budget_category.contribution_amount = -10
+    assert_not @parent_budget_category.valid?
+    assert_includes @parent_budget_category.errors[:contribution_amount], "must be greater than 0"
+
+    @parent_budget_category.contribution_amount = 100
+    assert @parent_budget_category.valid?, @parent_budget_category.errors.full_messages.to_sentence
+  end
+
+  test "contribution_amount is cleared outside fixed mode rather than rejected" do
+    @parent_budget_category.update!(contribution_mode: "fixed", contribution_amount: 100)
+
+    @parent_budget_category.update!(contribution_mode: "manual")
+
+    assert_nil @parent_budget_category.reload.contribution_amount
+  end
 end
 
 class BudgetCategoryRolloverTest < ActiveSupport::TestCase
@@ -996,6 +1018,61 @@ class BudgetCategoryRolloverTest < ActiveSupport::TestCase
     assert_not budget_category_for(middle).reload.rollover_enabled?
     assert budget_category_for(first).reload.rollover_enabled?,
            "an earlier month keeps the choice it was given"
+  end
+
+  # --- Recurring contribution (fixed mode only — see plan for why complete_to/capped are deferred) ---
+
+  test "a fixed contribution is inherited and already funds a newly opened month" do
+    first = initialized_budget(1.month.ago)
+    budget_category_for(first).update!(contribution_mode: "fixed", contribution_amount: 100)
+
+    second = initialized_budget(Date.current)
+    second_bc = budget_category_for(second)
+
+    assert_equal "fixed", second_bc.contribution_mode
+    assert_equal 100, second_bc.contribution_amount
+    assert_equal 100, second_bc.budgeted_spending,
+      "the recurring amount funds the month at creation, not on a later save"
+  end
+
+  test "propagate_contribution_choice_forward! reaches months already open, config and allocation both" do
+    first = initialized_budget(2.months.ago)
+    second = initialized_budget(1.months.ago)
+    allocate(first, 0)
+    allocate(second, 0)
+
+    budget_category_for(first).update!(contribution_mode: "fixed", contribution_amount: 100)
+    budget_category_for(first).propagate_contribution_choice_forward!
+
+    second_bc = budget_category_for(second).reload
+    assert_equal "fixed", second_bc.contribution_mode
+    assert_equal 100, second_bc.budgeted_spending,
+      "a month already open when the rule was set still picks it up"
+
+    budget_category_for(first).update!(contribution_amount: 150)
+    budget_category_for(first).propagate_contribution_choice_forward!
+
+    assert_equal 150, budget_category_for(second).reload.budgeted_spending,
+      "raising the recurring amount reaches a month already following it, or the change is invisible"
+  end
+
+  test "turning the recurring contribution off leaves a future month's already-set allocation alone" do
+    first = initialized_budget(2.months.ago)
+    second = initialized_budget(1.months.ago)
+    allocate(first, 0)
+    allocate(second, 0)
+
+    budget_category_for(first).update!(contribution_mode: "fixed", contribution_amount: 100)
+    budget_category_for(first).propagate_contribution_choice_forward!
+    assert_equal 100, budget_category_for(second).reload.budgeted_spending
+
+    budget_category_for(first).update!(contribution_mode: "manual")
+    budget_category_for(first).propagate_contribution_choice_forward!
+
+    second_bc = budget_category_for(second).reload
+    assert_equal "manual", second_bc.contribution_mode
+    assert_equal 100, second_bc.budgeted_spending,
+      "turning the rule off doesn't retroactively erase a number it already produced"
   end
 
   # Reference test for docs/mettre-de-cote-recommandation-produit-technique.md,

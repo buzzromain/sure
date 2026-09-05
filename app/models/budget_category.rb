@@ -23,8 +23,26 @@ class BudgetCategory < ApplicationRecord
 
   validates :budget_id, uniqueness: { scope: :category_id }
 
+  # A recurring standing contribution, applied once when a new period's row is
+  # first created (Budget#sync_budget_categories) rather than recomputed on
+  # every read. Only `fixed` is implemented: a set amount every period, no
+  # knowledge of any prior period's leftover required. `complete_to`/`capped`
+  # (top up to a linked goal's target) would need the same currency/ring-fence
+  # guards Budget::RolloverCalculator already has for the carry — that belongs
+  # there, not here, and isn't built yet.
+  # Key is `manual:`, not `none:` — `none?`/`.none` collide with Ruby's
+  # Enumerable#none? and ActiveRecord's own `.none` relation method.
+  enum :contribution_mode, { manual: "manual", fixed: "fixed" }, default: :manual
+
+  # Normalizes rather than rejects: the form hides this field outside `fixed`
+  # mode, so a stale value could only arrive from a mode switch or a crafted
+  # request, never from the user editing a field they can see.
+  before_validation :clear_contribution_amount_unless_fixed
+
+  validates :contribution_amount, numericality: { greater_than: 0 }, if: :fixed?
+
   monetize :budgeted_spending, :available_to_spend, :avg_monthly_expense, :median_monthly_expense, :actual_spending,
-           :rolled_over_amount
+           :rolled_over_amount, :contribution_amount
 
   class Group
     attr_reader :budget_category, :budget_subcategories
@@ -181,6 +199,28 @@ class BudgetCategory < ApplicationRecord
       .where.not(rollover_enabled: rollover_enabled)
 
     later.update_all(rollover_enabled: rollover_enabled, updated_at: Time.current)
+  end
+
+  # Same standing-choice reasoning as propagate_rollover_choice_forward!, with
+  # one deliberate difference: a future row already following this same fixed
+  # contribution also gets its budgeted_spending updated, not just the config.
+  # Rollover's own toggle never touches rolled_over_amount because a boolean
+  # has nothing to recompute — but a fixed amount IS the number this drives,
+  # so changing "100/mo" to "150/mo" and leaving every already-opened future
+  # month sitting at 100 would make the change do nothing anyone can see.
+  def propagate_contribution_choice_forward!
+    later = BudgetCategory
+      .joins(:budget)
+      .where(category_id: category_id)
+      .where(budgets: { family_id: budget.family_id, user_id: budget.user_id })
+      .where("budgets.start_date > ?", budget.start_date)
+
+    if fixed?
+      later.update_all(contribution_mode: "fixed", contribution_amount: contribution_amount,
+                        budgeted_spending: contribution_amount, updated_at: Time.current)
+    else
+      later.update_all(contribution_mode: contribution_mode, contribution_amount: nil, updated_at: Time.current)
+    end
   end
 
   def update_budgeted_spending!(new_budgeted_spending)
@@ -425,6 +465,10 @@ class BudgetCategory < ApplicationRecord
   end
 
   private
+    def clear_contribution_amount_unless_fixed
+      self.contribution_amount = nil unless fixed?
+    end
+
     # A foreign-currency obligation is converted, not skipped: it is still owed
     # out of this category. Only one with no rate at all falls out, and that one
     # is counted.
