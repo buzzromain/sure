@@ -101,7 +101,7 @@ en:
       amount_label: How much did you use?
       amount_hint: "%{saved} is currently backing this goal."
       account_label: From which account?
-      earmark_note: The amount you record stops being reserved for this goal, so your other goals on that account get their share back.
+      earmark_note: The amount you record stops being allocated to this goal, so your other goals on that account get their share back.
       cancel: Cancel
       submit: Record it
       success: "%{amount} recorded as used."
@@ -112,7 +112,7 @@ en:
         account_required: This goal is funded by several accounts — say which one the money came out of.
         account_not_linked: That account does not fund this goal.
         not_active: This goal is no longer active, so nothing can be recorded against it.
-        exceeds_earmark: That is more than the goal has earmarked on this account.
+        exceeds_earmark: That is more than the goal has allocated on this account.
         transaction_already_claimed: That outflow has already been attributed.
         transaction_not_found: That outflow is no longer available to attribute.
         not_claimed_by_this_goal: That outflow was attributed to a different goal.
@@ -120,7 +120,7 @@ en:
         no_linked_account: This goal has no funding account left.
     consumed_outflows:
       confirm_detach_cta: Yes, undo it
-      confirm_detach_body: "%{amount} goes back to counting against this goal. The account's earmark is not restored — set it again yourself if you want it back."
+      confirm_detach_body: "%{amount} goes back to counting against this goal. The account's allocation is not restored — set it again yourself if you want it back."
       confirm_detach_title: Undo this attribution?
       detach: Undo
       heading: What this goal paid for
@@ -160,7 +160,7 @@ en:
       pledge_just_saved: Log money you set aside
       funding_accounts_heading: Funding accounts
       funding_accounts:
-        earmarked_of: "%{earmarked} earmarked of %{balance}"
+        earmarked_of: "%{earmarked} allocated of %{balance}"
         empty:
           heading: No funding accounts linked yet
           body: Edit the goal to link the depository accounts you save into.
@@ -220,7 +220,7 @@ en:
         body: "Current pace %{avg}/mo · required %{required}/mo to hit your target."
         adjust_target_cta: Adjust target instead
       confirm_complete_title: Mark this goal complete?
-      confirm_complete_body: The money earmarked for it is released for your other goals on the same account. It leaves the Ongoing list, and you can still archive or restore it later.
+      confirm_complete_body: The money allocated to it is released for your other goals on the same account. It leaves the Ongoing list, and you can still archive or restore it later.
       confirm_complete_body_short: "You're at %{progress}%, %{saved} of %{target}. Marking complete records this as your achievement instead of the original target. Continue, or close this and adjust the target instead?"
       confirm_complete_cta: Mark complete
       confirm_archive_title: Archive this goal?
@@ -239,11 +239,11 @@ en:
         restore_cta: Restore goal
       celebration:
         heading_reserve: Reserve intact
-        body_reserve: "Your reserve is at its target balance, %{saved} of %{target}. Nothing to do — it stays earmarked."
+        body_reserve: "Your reserve is at its target balance, %{saved} of %{target}. Nothing to do — it stays allocated."
         heading: Goal reached. Nice work.
-        body_reached: "You've hit your target at %{saved} of %{target}. It is not closed yet — the money is still earmarked for it."
+        body_reached: "You've hit your target at %{saved} of %{target}. It is not closed yet — the money is still allocated to it."
         close_cta: Close this goal
-        close_hint: Closing releases the earmarked money for your other goals on the same account. Do this once you have actually spent it.
+        close_hint: Closing releases the allocated money for your other goals on the same account. Do this once you have actually spent it.
         frozen: "Reached on %{date} · %{amount}"
         body: "Goal closed at %{saved} of %{target}. Keep it as a record, or archive it now."
         archive_cta: Archive goal
@@ -335,9 +335,9 @@ en:
         amount_required: Set a target above zero.
         accounts_required: Pick at least one funding account.
       earmark:
-        headroom: "{left} left to earmark on this account."
+        headroom: "{left} left to allocate on this account."
         prorata: "Your goals on this account come to {total} for a balance of {balance} — they will progress pro rata."
-        whole_balance: This account will fund whatever is left after the other earmarks.
+        whole_balance: This account will fund whatever is left after the other allocations.
         whole_balance_alone: "This goal will use this account's whole balance."
       fields:
         target_mode: Target basis
@@ -356,9 +356,9 @@ en:
         notes: Notes (optional)
         notes_placeholder: A reminder for future you…
         funding_accounts: Funding accounts
-        funding_accounts_hint: This goal's balance is the balance (or earmarked portion) of these accounts.
+        funding_accounts_hint: This goal's balance is the balance (or allocated portion) of these accounts.
         whole_balance: Whole balance
-        earmark_for: Earmark amount for %{account}
+        earmark_for: Allocated amount for %{account}
         earmark_hint: Leave an amount blank to dedicate that account's whole balance.
       subtypes:
         checking: Checking

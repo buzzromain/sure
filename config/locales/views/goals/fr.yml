@@ -189,7 +189,7 @@ fr:
       amount_label: Combien avez-vous utilisé ?
       amount_hint: "%{saved} soutiennent actuellement cet objectif."
       account_label: Depuis quel compte ?
-      earmark_note: "Le montant enregistré cesse d'être réservé à cet objectif : vos autres objectifs sur ce compte récupèrent leur part."
+      earmark_note: "Le montant enregistré cesse d'être affecté à cet objectif : vos autres objectifs sur ce compte récupèrent leur part."
       cancel: Annuler
       submit: Enregistrer
       success: "%{amount} enregistrés comme utilisés."

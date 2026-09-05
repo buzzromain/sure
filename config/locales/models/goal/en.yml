@@ -18,7 +18,7 @@ en:
             base:
               at_least_one_linked_account_required: Pick at least one account to fund this goal.
               funding_source_must_be_exclusive: A goal can be funded by only one of a pocket, a budget envelope, or linked accounts — not several at once.
-              whole_account_conflict_on_restore: "Can't restore this goal: “%{account_name}” is now fully earmarked for “%{goal_name}”. Enter an amount on one of them first."
+              whole_account_conflict_on_restore: "Can't restore this goal: “%{account_name}” is now fully allocated to “%{goal_name}”. Enter an amount on one of them first."
             target_mode:
               months_requires_maintained: Only a reserve you maintain can have a target set in months of expenses.
             target_months:
