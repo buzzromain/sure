@@ -46,7 +46,7 @@
 
         <div class="form-field w-[110px]" title="<%= t("budget_categories.budget_category_form.contribution_title") %>">
           <%= f.select :contribution_mode,
-                       %w[manual fixed].map { |mode| [ t("budget_categories.budget_category_form.contribution_modes.#{mode}"), mode ] },
+                       %w[manual fixed complete_to].map { |mode| [ t("budget_categories.budget_category_form.contribution_modes.#{mode}"), mode ] },
                        {},
                        id: dom_id(budget_category, :contribution_mode),
                        class: "form-field__input text-xs",
@@ -76,8 +76,9 @@
                               step: currency.step,
                               id: dom_id(budget_category, :budgeted_spending),
                               min: 0,
+                              disabled: budget_category.complete_to?,
                               data: { auto_submit_form_target: "auto" },
-                              title: budget_category.subcategory? ? t("budget_categories.budget_category_form.shared_title") : nil %>
+                              title: budget_category.complete_to? ? t("budget_categories.budget_category_form.complete_to_title") : (budget_category.subcategory? ? t("budget_categories.budget_category_form.shared_title") : nil) %>
           </div>
         </div>
       </div>

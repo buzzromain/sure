@@ -574,6 +574,50 @@ class BudgetCategoryTest < ActiveSupport::TestCase
 
     assert_nil @parent_budget_category.reload.contribution_amount
   end
+
+  test "complete_to requires a linked funding goal" do
+    @parent_budget_category.contribution_mode = "complete_to"
+
+    assert_not @parent_budget_category.valid?
+    assert_includes @parent_budget_category.errors[:contribution_mode],
+      "Link a goal to this category before completing to it."
+  end
+
+  test "contribution_target_amount for complete_to tops up to the linked goal's target, never negative" do
+    Goal.create!(family: @family, name: "Complete to test", target_amount: 500, currency: "USD",
+                 funding_category: @parent_category)
+    @parent_budget_category.contribution_mode = "complete_to"
+
+    assert_equal 500, @parent_budget_category.contribution_target_amount(0)
+    assert_equal 200, @parent_budget_category.contribution_target_amount(300)
+    assert_equal 0, @parent_budget_category.contribution_target_amount(600)
+  end
+
+  test "contribution_target_amount defaults its carry to this row's own stored rolled_over_amount" do
+    Goal.create!(family: @family, name: "Complete to test", target_amount: 500, currency: "USD",
+                 funding_category: @parent_category)
+    @parent_budget_category.update!(contribution_mode: "complete_to", rollover_enabled: true)
+    @parent_budget_category.update_column(:rolled_over_amount, 150)
+
+    assert_equal 350, @parent_budget_category.contribution_target_amount
+  end
+
+  test "contribution_target_amount returns nil for complete_to without a linked goal, or a currency mismatch" do
+    @parent_budget_category.contribution_mode = "complete_to"
+    assert_nil @parent_budget_category.contribution_target_amount, "no goal linked at all"
+
+    # Goal itself already refuses a currency mismatch against the family
+    # (funding_category_must_match_family_currency) — bypassing validation
+    # here to exercise contribution_target_amount's OWN guard directly,
+    # since it can't assume how a mismatched state might otherwise arise
+    # (legacy data, a family currency change after the fact).
+    mismatched_goal = Goal.new(family: @family, name: "Currency mismatch", target_amount: 500, currency: "EUR",
+                               funding_category: @parent_category)
+    mismatched_goal.save!(validate: false)
+
+    assert_nil @parent_budget_category.contribution_target_amount,
+      "goal linked but currency differs from the category's USD"
+  end
 end
 
 class BudgetCategoryRolloverTest < ActiveSupport::TestCase
@@ -1073,6 +1117,67 @@ class BudgetCategoryRolloverTest < ActiveSupport::TestCase
     assert_equal "manual", second_bc.contribution_mode
     assert_equal 100, second_bc.budgeted_spending,
       "turning the rule off doesn't retroactively erase a number it already produced"
+  end
+
+  test "a new month inheriting complete_to computes and locks in its contribution exactly once" do
+    Goal.create!(family: @family, name: "Goal", target_amount: 500, currency: "USD", funding_category: @category)
+
+    first = initialized_budget(1.month.ago)
+    first_bc = budget_category_for(first)
+    first_bc.update!(rollover_enabled: true, contribution_mode: "complete_to")
+    # Mirrors what the controller does immediately when a user sets
+    # complete_to on an EXISTING period (see BudgetCategoriesController#update):
+    # compute now, using this row's own already-correct carry (0, nothing
+    # precedes it), and stamp it. Without this, the calculator's own
+    # "catch up a row nothing ever explicitly applied" behaviour would apply
+    # here too on the next recompute below -- correct in general, but not
+    # what this test is trying to isolate, and it would rewrite a month that
+    # already has real spending against it.
+    first_bc.update_columns(budgeted_spending: first_bc.contribution_target_amount, contribution_applied_at: Time.current)
+    spend(20, budget: first)
+    # leftover_for(first) = 500 (just applied) - 20 spent = 480, carried forward.
+
+    second = initialized_budget(Date.current)
+    # initialized_budget sets Budget#budgeted_spending (the family's monthly
+    # income target, unrelated to any category) via .update! AFTER
+    # find_or_bootstrap has already returned -- so `second` isn't
+    # "initialized" yet, and invisible to the chain, during find_or_bootstrap's
+    # own internal recompute!. This explicit call is what a real user's next
+    # page load does naturally, once their month is actually set up.
+    recompute!
+    second_bc = budget_category_for(second)
+
+    assert_equal "complete_to", second_bc.contribution_mode
+    assert_equal 480, second_bc.rolled_over_amount
+    assert_equal 20, second_bc.budgeted_spending, "500 target - 480 already carried = 20"
+    assert_not_nil second_bc.contribution_applied_at
+
+    # A later recompute -- e.g. triggered by editing an unrelated category
+    # elsewhere in the family -- must never touch it again, even though the
+    # incoming carry it was computed from could have changed by then.
+    second_bc.update_column(:budgeted_spending, 999)
+    recompute!
+
+    assert_equal 999, budget_category_for(second).reload.budgeted_spending,
+      "contribution_applied_at must stop the calculator from ever overwriting this again"
+  end
+
+  test "propagate_contribution_choice_forward! computes each future month's own contribution, not one shared value" do
+    Goal.create!(family: @family, name: "Goal", target_amount: 500, currency: "USD", funding_category: @category)
+
+    first = initialized_budget(2.months.ago)
+    second = initialized_budget(1.months.ago)
+    allocate(first, 0)
+    allocate(second, 0)
+    budget_category_for(second).update_column(:rolled_over_amount, 300)
+
+    budget_category_for(first).update!(contribution_mode: "complete_to")
+    budget_category_for(first).propagate_contribution_choice_forward!
+
+    second_bc = budget_category_for(second).reload
+    assert_equal "complete_to", second_bc.contribution_mode
+    assert_equal 200, second_bc.budgeted_spending, "500 target - 300 already carried on THIS month = 200"
+    assert_not_nil second_bc.contribution_applied_at
   end
 
   # Reference test for docs/mettre-de-cote-recommandation-produit-technique.md,

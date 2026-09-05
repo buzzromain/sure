@@ -15,9 +15,11 @@ fr:
       shared_placeholder: Partagé
       shared_title: Laisser vide pour partager le budget des parents
       contribution_title: Contribution récurrente
+      complete_to_title: Défini automatiquement pour compléter la cible de l'objectif lié
       contribution_modes:
         manual: Manuel
         fixed: Fixe
+        complete_to: "Compléter l'objectif"
     confirm_button:
       confirm: Confirmer
     goals:

@@ -88,6 +88,35 @@ class Budget::RolloverCalculator
             )
           end
 
+          # complete_to is only ever decided here, and only once: the
+          # controller and propagate_contribution_choice_forward! already
+          # handle it directly for a row that already exists (its own stored
+          # rolled_over_amount is the correct carry by then). This is the one
+          # path where a row can be brand new -- sync_budget_categories just
+          # created it, in the same find_or_bootstrap call, with nothing
+          # decided yet -- so it's the only place that needs `incoming`
+          # before it's persisted. contribution_applied_at guards against
+          # ever touching budgeted_spending again on a later recompute,
+          # which would otherwise silently overwrite a user's own edit or
+          # keep shifting the number as later spending changes what the
+          # carry would have been.
+          #
+          # Written immediately via update_columns, deliberately NOT folded
+          # into the batched upsert_all below: that batch's `updates` hashes
+          # are full attribute snapshots taken at read time, and widening its
+          # update_only to cover budgeted_spending would let a STALE
+          # budgeted_spending -- read here, but changed by someone else
+          # before this write lands -- clobber their edit on every row, not
+          # just complete_to ones. A separate, targeted write has no such
+          # blast radius. update_columns also updates this in-memory object,
+          # so leftover_for below (which reads budget_category[:budgeted_spending]
+          # directly) sees the number just decided rather than the stale 0
+          # sync_budget_categories created the row with.
+          if budget_category.complete_to? && budget_category.contribution_applied_at.nil?
+            target = budget_category.contribution_target_amount(incoming)
+            budget_category.update_columns(budgeted_spending: target, contribution_applied_at: now) if target
+          end
+
           # Switching the toggle off has to stop the money in both directions.
           # Gating only what a month receives would let an opted-out month hand
           # its whole allocation to the next one that opts back in, so the

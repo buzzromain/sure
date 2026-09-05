@@ -87,9 +87,11 @@ en:
       shared_placeholder: Shared
       shared_title: Leave empty to share parent's budget
       contribution_title: Recurring contribution
+      complete_to_title: Set automatically to complete the linked goal's target
       contribution_modes:
         manual: "Manual"
         fixed: "Fixed"
+        complete_to: "Complete to goal"
     confirm_button:
       confirm: "Confirm"
     move:

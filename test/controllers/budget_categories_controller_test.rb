@@ -164,6 +164,33 @@ class BudgetCategoriesControllerTest < ActionDispatch::IntegrationTest
     assert_equal 100.0, future_bc.reload.budgeted_spending.to_f
   end
 
+  test "setting complete_to drives this month's allocation from the linked goal's target minus the current carry" do
+    Goal.create!(family: @family, name: "Goal", target_amount: 500, currency: "USD",
+                 funding_category: @parent_category)
+
+    previous = Budget.find_or_bootstrap(@family, start_date: 1.month.ago)
+    previous.update!(budgeted_spending: 5000, expected_income: 7000)
+    previous_bc = previous.budget_categories.find_by!(category: @parent_category)
+    previous_bc.update!(budgeted_spending: 200, rollover_enabled: true)
+    create_transaction(date: previous.start_date, account: accounts(:depository), amount: 80,
+                       category: @parent_category)
+    @parent_budget_category.update!(rollover_enabled: true)
+
+    Budget::RolloverCalculator.new(family: @family, user: nil).recompute!
+    assert_equal 120, @parent_budget_category.reload[:rolled_over_amount],
+      "sanity check on the carry the rest of this test depends on"
+
+    patch budget_budget_category_path(@budget, @parent_budget_category),
+          params: { budget_category: { contribution_mode: "complete_to" } },
+          as: :turbo_stream
+
+    assert_response :success
+    reloaded = @parent_budget_category.reload
+    assert_equal "complete_to", reloaded.contribution_mode
+    assert_equal 380.0, reloaded.budgeted_spending.to_f, "500 target - 120 already carried = 380"
+    assert_not_nil reloaded.contribution_applied_at
+  end
+
   test "updating budgeted_spending without touching contribution_mode leaves it as it was" do
     patch budget_budget_category_path(@budget, @parent_budget_category),
           params: { budget_category: { budgeted_spending: 700 } },

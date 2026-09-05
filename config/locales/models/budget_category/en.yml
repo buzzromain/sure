@@ -1,0 +1,9 @@
+---
+en:
+  activerecord:
+    errors:
+      models:
+        budget_category:
+          attributes:
+            contribution_mode:
+              complete_to_requires_a_funding_goal: Link a goal to this category before completing to it.

@@ -23,16 +23,18 @@ class BudgetCategory < ApplicationRecord
 
   validates :budget_id, uniqueness: { scope: :category_id }
 
-  # A recurring standing contribution, applied once when a new period's row is
-  # first created (Budget#sync_budget_categories) rather than recomputed on
-  # every read. Only `fixed` is implemented: a set amount every period, no
-  # knowledge of any prior period's leftover required. `complete_to`/`capped`
-  # (top up to a linked goal's target) would need the same currency/ring-fence
-  # guards Budget::RolloverCalculator already has for the carry — that belongs
-  # there, not here, and isn't built yet.
+  # A recurring standing contribution. `fixed` applies synchronously, every
+  # time (the controller or Budget#sync_budget_categories sets
+  # budgeted_spending directly, no state to track). `complete_to` (top up to
+  # a linked goal's target) needs the currency-guarded incoming carry
+  # Budget::RolloverCalculator computes for a brand-new period, so its
+  # application there is guarded by contribution_applied_at — see
+  # #contribution_target_amount and RolloverCalculator#recompute_chain!.
+  # `capped` (complete_to, bounded by a monthly max) is a real follow-up on
+  # top of complete_to, not built yet.
   # Key is `manual:`, not `none:` — `none?`/`.none` collide with Ruby's
   # Enumerable#none? and ActiveRecord's own `.none` relation method.
-  enum :contribution_mode, { manual: "manual", fixed: "fixed" }, default: :manual
+  enum :contribution_mode, { manual: "manual", fixed: "fixed", complete_to: "complete_to" }, default: :manual
 
   # Normalizes rather than rejects: the form hides this field outside `fixed`
   # mode, so a stale value could only arrive from a mode switch or a crafted
@@ -40,6 +42,7 @@ class BudgetCategory < ApplicationRecord
   before_validation :clear_contribution_amount_unless_fixed
 
   validates :contribution_amount, numericality: { greater_than: 0 }, if: :fixed?
+  validate :complete_to_requires_a_funding_goal, if: :complete_to?
 
   monetize :budgeted_spending, :available_to_spend, :avg_monthly_expense, :median_monthly_expense, :actual_spending,
            :rolled_over_amount, :contribution_amount
@@ -218,8 +221,44 @@ class BudgetCategory < ApplicationRecord
     if fixed?
       later.update_all(contribution_mode: "fixed", contribution_amount: contribution_amount,
                         budgeted_spending: contribution_amount, updated_at: Time.current)
+    elsif complete_to?
+      # Unlike fixed's single shared amount, every future row already has its
+      # own stored rolled_over_amount, so this can't be one update_all --
+      # each row's target is computed against its own carry. update_columns,
+      # not save!, mirrors update_all's validation bypass: this is a bulk
+      # standing-choice propagation, not a user editing one row by hand.
+      later.find_each do |row|
+        row.contribution_mode = "complete_to"
+        target = row.contribution_target_amount
+        row.update_columns(
+          contribution_mode: "complete_to",
+          contribution_amount: nil,
+          budgeted_spending: target || row.budgeted_spending,
+          contribution_applied_at: target ? Time.current : row.contribution_applied_at,
+          updated_at: Time.current
+        )
+      end
     else
       later.update_all(contribution_mode: contribution_mode, contribution_amount: nil, updated_at: Time.current)
+    end
+  end
+
+  # The amount this period's recurring contribution computes to, or nil when
+  # it isn't applicable (manual mode, or complete_to with no linked goal / a
+  # currency mismatch). `carry` defaults to this row's own already-stored
+  # rolled_over_amount — correct whenever the row already exists (the
+  # controller, propagate_contribution_choice_forward! above). The one caller
+  # for whom that default is wrong is RolloverCalculator, mid-chain, with a
+  # brand-new row whose incoming carry it has just computed and not yet
+  # persisted — it passes that value explicitly instead.
+  def contribution_target_amount(carry = rolled_over_amount)
+    case contribution_mode
+    when "fixed" then contribution_amount
+    when "complete_to"
+      goal = category.funding_goal
+      return nil unless goal && goal.currency == currency
+
+      [ goal.target_amount - carry, 0 ].max
     end
   end
 
@@ -467,6 +506,13 @@ class BudgetCategory < ApplicationRecord
   private
     def clear_contribution_amount_unless_fixed
       self.contribution_amount = nil unless fixed?
+    end
+
+    # Nothing to complete toward without a target.
+    def complete_to_requires_a_funding_goal
+      return if category&.funding_goal.present?
+
+      errors.add(:contribution_mode, :complete_to_requires_a_funding_goal)
     end
 
     # A foreign-currency obligation is converted, not skipped: it is still owed

@@ -125,17 +125,20 @@ class Budget < ApplicationRecord
     inherited_contributions = inherited_contribution_configs(categories_to_add)
 
     categories_to_add.each do |category_id|
-      contribution_amount = inherited_contributions[category_id]
+      contribution_mode, contribution_amount = inherited_contributions.fetch(category_id, [ "manual", nil ])
 
       budget_categories.create!(
         category: current_categories_by_id.fetch(category_id),
         # A standing fixed contribution starts the period already funded --
-        # this IS "apply the recurring contribution once per period" (the
-        # once being right here, at the one moment this row is born).
-        budgeted_spending: contribution_amount || 0,
+        # this IS "apply the recurring contribution once per period" for
+        # `fixed`. A standing complete_to inherits the mode only; its amount
+        # depends on the incoming carry, computed and applied right after by
+        # Budget::RolloverCalculator#recompute_chain! within this same
+        # find_or_bootstrap call, guarded by contribution_applied_at.
+        budgeted_spending: (contribution_mode == "fixed" ? contribution_amount : 0),
         currency: family.currency,
         rollover_enabled: inherited_rollover.fetch(category_id, false),
-        contribution_mode: contribution_amount ? "fixed" : "manual",
+        contribution_mode: contribution_mode,
         contribution_amount: contribution_amount
       )
     end
@@ -172,8 +175,8 @@ class Budget < ApplicationRecord
     return {} unless source
 
     source.budget_categories
-      .where(category_id: category_ids, contribution_mode: "fixed")
-      .each_with_object({}) { |bc, configs| configs[bc.category_id] = bc.contribution_amount }
+      .where(category_id: category_ids, contribution_mode: %w[fixed complete_to])
+      .each_with_object({}) { |bc, configs| configs[bc.category_id] = [ bc.contribution_mode, bc.contribution_amount ] }
   end
 
   def uncategorized_budget_category

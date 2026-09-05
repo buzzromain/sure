@@ -1,0 +1,9 @@
+---
+fr:
+  activerecord:
+    errors:
+      models:
+        budget_category:
+          attributes:
+            contribution_mode:
+              complete_to_requires_a_funding_goal: Liez un objectif à cette catégorie avant de compléter jusqu'à lui.

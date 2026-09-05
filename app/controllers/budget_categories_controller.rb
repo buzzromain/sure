@@ -45,11 +45,20 @@ class BudgetCategoriesController < ApplicationController
       @budget_category.propagate_contribution_choice_forward!
     end
 
-    # A fixed contribution IS this period's allocation -- the amount field is
-    # disabled client-side in that mode (see budget_category_contribution_controller.js),
-    # so budgeted_spending_param would otherwise submit a stale/blank value.
-    if @budget_category.fixed?
-      @budget_category.update_budgeted_spending!(@budget_category.contribution_amount)
+    # A fixed or complete_to contribution IS this period's allocation -- the
+    # amount field is disabled client-side in those modes (see
+    # budget_category_contribution_controller.js), so budgeted_spending_param
+    # would otherwise submit a stale/blank value. complete_to's own stored
+    # rolled_over_amount is already the correct incoming carry for THIS row
+    # (nothing in this request changes what flows INTO this period, only
+    # what happens within it), so no need to defer to RolloverCalculator the
+    # way a brand-new period's row does in sync_budget_categories.
+    if @budget_category.fixed? || @budget_category.complete_to?
+      amount = @budget_category.contribution_target_amount
+      if amount
+        @budget_category.update_budgeted_spending!(amount)
+        @budget_category.update_column(:contribution_applied_at, Time.current) if @budget_category.complete_to?
+      end
     else
       @budget_category.update_budgeted_spending!(budgeted_spending_param)
     end
