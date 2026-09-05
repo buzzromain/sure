@@ -60,6 +60,25 @@ fr:
       submit: Déplacer
       success: Argent déplacé.
       to_label: Vers
+    move_reserve:
+      amount_label: Montant
+      button_title: Déplacer la réserve depuis cette catégorie
+      cancel: Annuler
+      dialog_title: Déplacer la réserve
+      no_destination: C'est la seule enveloppe disponible pour l'instant — une catégorie ne peut pas envoyer vers son propre parent ni vers sa sous-catégorie.
+      submit: Déplacer
+      success: Réserve déplacée.
+      to_label: Vers
+    opening_balance:
+      amount_label: Montant
+      button_title: Enregistrer un solde initial
+      cancel: Annuler
+      dialog_title: Enregistrer un solde initial
+      errors:
+        invalid: Indiquez un montant supérieur à zéro.
+      note_label: "Note (facultatif)"
+      submit: Enregistrer
+      success: Solde initial enregistré.
     no_categories:
       new_category: Nouvelle catégorie
       no_categories_message: Vous n'avez pas encore créé ou attribué de catégories de dépenses à vos transactions.

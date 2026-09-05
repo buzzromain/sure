@@ -1,0 +1,23 @@
+<%= flash_notification_stream_items %>
+
+<%# adjustments_balance isn't part of allocation_progress/confirm_button's
+    math (those stay budgeted_spending-only, same reason total_rolled_over
+    is kept out of allocated_spending), so only the two rows themselves --
+    plus whatever their allocation display drags along -- need refreshing. %>
+<% [ @from, @to ].each do |budget_category| %>
+  <%= turbo_stream.replace dom_id(budget_category, :form), partial: "budget_categories/budget_category_form", locals: { budget_category: budget_category } %>
+
+  <% if budget_category.subcategory? %>
+    <% if (parent_budget_category = budget_category.parent_budget_category) %>
+      <%= turbo_stream.replace dom_id(parent_budget_category, :form), partial: "budget_categories/budget_category_form", locals: { budget_category: parent_budget_category } %>
+    <% end %>
+
+    <% budget_category.siblings.each do |sibling| %>
+      <%= turbo_stream.replace dom_id(sibling, :form), partial: "budget_categories/budget_category_form", locals: { budget_category: sibling } %>
+    <% end %>
+  <% else %>
+    <% budget_category.subcategories.each do |subcategory| %>
+      <%= turbo_stream.replace dom_id(subcategory, :form), partial: "budget_categories/budget_category_form", locals: { budget_category: subcategory } %>
+    <% end %>
+  <% end %>
+<% end %>

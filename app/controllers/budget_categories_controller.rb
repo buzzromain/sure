@@ -2,7 +2,7 @@ class BudgetCategoriesController < ApplicationController
   include BudgetOwnership
 
   before_action :set_budget
-  before_action :ensure_budget_editable!, only: %i[index update move]
+  before_action :ensure_budget_editable!, only: %i[index update move move_reserve record_opening_balance]
 
   def index
     @budget_categories = @budget.budget_categories.includes(:category)
@@ -108,11 +108,82 @@ class BudgetCategoriesController < ApplicationController
     end
   end
 
+  # The reserve equivalent of #move: shifts accumulated adjustments_balance
+  # instead of this month's budgeted_spending. Same after-commit recompute
+  # sequencing as #move, for the same reason -- BudgetAdjustment.reallocate!
+  # never calls the calculator itself.
+  def move_reserve
+    @from = @budget.budget_categories.find(params[:from_id])
+    @to = @budget.budget_categories.find(params[:to_id])
+
+    BudgetAdjustment.reallocate!(from_category: @from.category, to_category: @to.category,
+                                  amount: move_reserve_amount_param, family: @budget.family, user: @budget.user)
+    Budget::RolloverCalculator.new(family: @budget.family, user: @budget.user).recompute!
+
+    @budget.reload
+    flash.now[:notice] = t(".success")
+    respond_to do |format|
+      format.turbo_stream
+      format.html { redirect_to budget_budget_categories_path(@budget, **budget_owner_query), notice: t(".success") }
+    end
+  rescue BudgetAdjustment::InvalidReallocation => e
+    flash.now[:alert] = e.message
+    respond_to do |format|
+      format.turbo_stream { render turbo_stream: flash_notification_stream_items, status: :unprocessable_entity }
+      format.html do
+        @budget_categories = @budget.budget_categories.includes(:category)
+        render :index, layout: "wizard", status: :unprocessable_entity
+      end
+    end
+  end
+
+  # A one-time credit for money already sitting in an envelope before Sure
+  # started tracking it. No InvalidReallocation-style error class: the only
+  # way this form can fail is a zero/blank amount, already blocked
+  # client-side by the field's min -- a crafted request just gets the
+  # model's own default validation message.
+  def record_opening_balance
+    @budget_category = @budget.budget_categories.find_by!(category_id: params[:category_id])
+
+    BudgetAdjustment.record_opening_balance!(category: @budget_category.category, amount: opening_balance_amount_param,
+                                              family: @budget.family, user: @budget.user, currency: @budget_category.currency,
+                                              note: opening_balance_note_param)
+    Budget::RolloverCalculator.new(family: @budget.family, user: @budget.user).recompute!
+
+    @budget_category.reload
+    flash.now[:notice] = t("budget_categories.opening_balance.success")
+    respond_to do |format|
+      format.turbo_stream
+      format.html { redirect_to budget_budget_categories_path(@budget, **budget_owner_query), notice: t("budget_categories.opening_balance.success") }
+    end
+  rescue ActiveRecord::RecordInvalid
+    flash.now[:alert] = t("budget_categories.opening_balance.errors.invalid")
+    respond_to do |format|
+      format.turbo_stream { render turbo_stream: flash_notification_stream_items, status: :unprocessable_entity }
+      format.html do
+        @budget_categories = @budget.budget_categories.includes(:category)
+        render :index, layout: "wizard", status: :unprocessable_entity
+      end
+    end
+  end
+
   private
     # A blank or non-numeric amount is a zero move, which move_allocation!
     # refuses with the localized "enter an amount greater than zero".
     def move_amount_param
       params.require(:budget_category_move).permit(:amount).fetch(:amount, nil).to_d
+    end
+
+    def move_reserve_amount_param
+      params.require(:budget_adjustment_move).permit(:amount).fetch(:amount, nil).to_d
+    end
+
+    def opening_balance_amount_param
+      params.require(:budget_adjustment_opening_balance).permit(:amount).fetch(:amount, nil).to_d
+    end
+
+    def opening_balance_note_param
+      params.require(:budget_adjustment_opening_balance).permit(:note).fetch(:note, nil).presence
     end
 
     def rollover_enabled_param

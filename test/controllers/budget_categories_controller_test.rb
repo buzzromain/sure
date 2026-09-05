@@ -376,6 +376,123 @@ class BudgetCategoriesControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
     assert_equal 0, foreign.reload.budgeted_spending.to_i
   end
+
+  test "move_reserve shifts adjustments_balance between two envelopes" do
+    source = @budget.budget_categories.find_by(category: @parent_category)
+    other = Category.create!(name: "Reserve destination controller test", family: @family, color: "#e99537")
+    destination = BudgetCategory.create!(budget: @budget, category: other, budgeted_spending: 0, currency: @budget.currency)
+
+    BudgetAdjustment.record_opening_balance!(category: @parent_category, amount: 200, family: @family, currency: @budget.currency)
+    Budget::RolloverCalculator.new(family: @family, user: @budget.user).recompute!
+    assert_equal 200, source.reload[:adjustments_balance].to_i
+
+    post move_reserve_budget_budget_categories_path(@budget),
+         params: { from_id: source.id, to_id: destination.id, budget_adjustment_move: { amount: "80" } },
+         as: :turbo_stream
+
+    assert_response :success
+    assert_equal 120, source.reload[:adjustments_balance].to_i
+    assert_equal 80, destination.reload[:adjustments_balance].to_i
+  end
+
+  test "move_reserve refuses more than the source has in reserve and says why" do
+    source = @budget.budget_categories.find_by(category: @parent_category)
+    other = Category.create!(name: "Reserve destination controller test", family: @family, color: "#e99537")
+    destination = BudgetCategory.create!(budget: @budget, category: other, budgeted_spending: 0, currency: @budget.currency)
+
+    BudgetAdjustment.record_opening_balance!(category: @parent_category, amount: 50, family: @family, currency: @budget.currency)
+    Budget::RolloverCalculator.new(family: @family, user: @budget.user).recompute!
+
+    post move_reserve_budget_budget_categories_path(@budget),
+         params: { from_id: source.id, to_id: destination.id, budget_adjustment_move: { amount: "500" } },
+         as: :turbo_stream
+
+    assert_response :unprocessable_entity
+    assert_equal 50, source.reload[:adjustments_balance].to_i
+    assert_equal 0, destination.reload[:adjustments_balance].to_i
+  end
+
+  test "move_reserve refuses a parent to subcategory transfer" do
+    parent = @budget.budget_categories.find_by(category: @parent_category)
+    child = @budget.budget_categories.find_by(category: @electric_category)
+
+    BudgetAdjustment.record_opening_balance!(category: @parent_category, amount: 100, family: @family, currency: @budget.currency)
+    Budget::RolloverCalculator.new(family: @family, user: @budget.user).recompute!
+
+    post move_reserve_budget_budget_categories_path(@budget),
+         params: { from_id: parent.id, to_id: child.id, budget_adjustment_move: { amount: "10" } },
+         as: :turbo_stream
+
+    assert_response :unprocessable_entity
+    assert_equal 100, parent.reload[:adjustments_balance].to_i
+  end
+
+  test "move_reserve recomputes the rollover chain, once of its own accord" do
+    source = @budget.budget_categories.find_by(category: @parent_category)
+    other = Category.create!(name: "Reserve destination controller test", family: @family, color: "#e99537")
+    destination = BudgetCategory.create!(budget: @budget, category: other, budgeted_spending: 0, currency: @budget.currency)
+
+    BudgetAdjustment.record_opening_balance!(category: @parent_category, amount: 100, family: @family, currency: @budget.currency)
+    Budget::RolloverCalculator.new(family: @family, user: @budget.user).recompute!
+
+    # Same double cost as #move: set_budget's find_or_bootstrap recomputes
+    # once, the action recomputes again after the reallocation commits.
+    Budget::RolloverCalculator.any_instance.expects(:recompute!).twice
+
+    post move_reserve_budget_budget_categories_path(@budget),
+         params: { from_id: source.id, to_id: destination.id, budget_adjustment_move: { amount: "10" } },
+         as: :turbo_stream
+
+    assert_response :success
+  end
+
+  test "a category from another budget cannot be reached through move_reserve" do
+    source = @budget.budget_categories.find_by(category: @parent_category)
+    BudgetAdjustment.record_opening_balance!(category: @parent_category, amount: 100, family: @family, currency: @budget.currency)
+    Budget::RolloverCalculator.new(family: @family, user: @budget.user).recompute!
+
+    other_family = families(:empty)
+    other_budget = Budget.find_or_bootstrap(other_family, start_date: Date.current.beginning_of_month)
+    foreign_category = other_family.categories.create!(name: "Foreign", color: "#e99537")
+    foreign = BudgetCategory.create!(budget: other_budget, category: foreign_category, budgeted_spending: 0, currency: other_budget.currency)
+
+    post move_reserve_budget_budget_categories_path(@budget),
+         params: { from_id: source.id, to_id: foreign.id, budget_adjustment_move: { amount: "10" } },
+         as: :turbo_stream
+
+    assert_response :not_found
+  end
+
+  test "record_opening_balance credits the envelope's reserve" do
+    budget_category = @budget.budget_categories.find_by(category: @parent_category)
+
+    post record_opening_balance_budget_budget_categories_path(@budget),
+         params: { category_id: @parent_category.id, budget_adjustment_opening_balance: { amount: "150", note: "Savings transfer" } },
+         as: :turbo_stream
+
+    assert_response :success
+    assert_equal 150, budget_category.reload[:adjustments_balance].to_i
+    assert_equal 1, BudgetAdjustment.where(category: @parent_category, kind: "opening_balance").count
+  end
+
+  test "record_opening_balance refuses a non-positive amount" do
+    post record_opening_balance_budget_budget_categories_path(@budget),
+         params: { category_id: @parent_category.id, budget_adjustment_opening_balance: { amount: "0" } },
+         as: :turbo_stream
+
+    assert_response :unprocessable_entity
+    assert_equal 0, BudgetAdjustment.where(category: @parent_category).count
+  end
+
+  test "record_opening_balance recomputes the rollover chain, once of its own accord" do
+    Budget::RolloverCalculator.any_instance.expects(:recompute!).twice
+
+    post record_opening_balance_budget_budget_categories_path(@budget),
+         params: { category_id: @parent_category.id, budget_adjustment_opening_balance: { amount: "50" } },
+         as: :turbo_stream
+
+    assert_response :success
+  end
 end
 
 class BudgetCategoriesControllerSharingTest < ActionDispatch::IntegrationTest

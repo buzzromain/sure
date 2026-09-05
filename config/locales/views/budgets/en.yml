@@ -123,6 +123,25 @@ en:
         parent_child: Money cannot move between a category and its own subcategory — adjust the subcategory directly.
         same_category: Pick a different category to move the money to.
         uncategorized: Uncategorized is not a real envelope, so money cannot move in or out of it.
+    move_reserve:
+      button_title: Move reserve from this category
+      cancel: Cancel
+      dialog_title: Move reserve
+      no_destination: This is the only envelope reserve can move between right now — a category cannot send to its own parent or child.
+      submit: Move
+      amount_label: Amount
+      to_label: To
+      success: Reserve moved.
+    opening_balance:
+      button_title: Record an opening balance
+      dialog_title: Record an opening balance
+      amount_label: Amount
+      note_label: "Note (optional)"
+      cancel: Cancel
+      submit: Record
+      success: Opening balance recorded.
+      errors:
+        invalid: Enter an amount greater than zero.
     no_categories:
       oops: "Oops!"
       no_categories_message: "You have not created or assigned any expense categories to your transactions yet."
