@@ -679,4 +679,59 @@ class AccountTest < ActiveSupport::TestCase
     assert_empty queries.grep(/SELECT "transactions"\.\* FROM "transactions" WHERE "transactions"\."id" =/)
     assert transfers.all? { |transfer| !Transfer.exists?(transfer.id) }
   end
+
+  # --- reserved_total: Pocket and GoalAccount share one reservation view ---
+
+  test "reserved_total sums Pocket and GoalAccount together" do
+    account = Account.create!(family: @family, accountable: Depository.new, name: "Shared reservations",
+                               currency: "USD", balance: 1_000)
+    goal = Goal.new(family: @family, name: "Taxes", target_amount: 300, currency: "USD")
+    goal.goal_accounts.build(account: account, allocated_amount: 300)
+    goal.save!
+    account.pockets.create!(name: "Emergency", allocated_amount: 200, currency: "USD")
+
+    assert_equal 500, account.reload.reserved_total
+  end
+
+  test "reserved_total excludes only the named pocket, not the other side" do
+    account = Account.create!(family: @family, accountable: Depository.new, name: "Shared reservations",
+                               currency: "USD", balance: 1_000)
+    goal = Goal.new(family: @family, name: "Taxes", target_amount: 300, currency: "USD")
+    goal.goal_accounts.build(account: account, allocated_amount: 300)
+    goal.save!
+    pocket = account.pockets.create!(name: "Emergency", allocated_amount: 200, currency: "USD")
+
+    assert_equal 300, account.reload.reserved_total(excluding_pocket_id: pocket.id)
+  end
+
+  test "free_balance and free_to_earmark both account for Pocket and Goal reservations together" do
+    account = Account.create!(family: @family, accountable: Depository.new, name: "Shared reservations",
+                               currency: "USD", balance: 1_000)
+    goal = Goal.new(family: @family, name: "Taxes", target_amount: 300, currency: "USD")
+    goal.goal_accounts.build(account: account, allocated_amount: 300)
+    goal.save!
+    account.pockets.create!(name: "Emergency", allocated_amount: 200, currency: "USD")
+
+    account.reload
+    assert_equal 500, account.free_balance
+    assert_equal 500, account.free_to_earmark
+    assert_not account.pockets_overflow?
+  end
+
+  test "pockets_overflow? turns true once a synced balance drops below a Goal's earmark alone" do
+    account = Account.create!(family: @family, accountable: Depository.new, name: "Over-committed",
+                               currency: "USD", balance: 500)
+    goal = Goal.new(family: @family, name: "Taxes", target_amount: 300, currency: "USD")
+    goal.goal_accounts.build(account: account, allocated_amount: 300)
+    goal.save!
+    assert_not account.reload.pockets_overflow?
+
+    # The reservation itself doesn't shrink when the real balance does (e.g. a
+    # sync picking up unrelated spending) — that's the coverage shortfall this
+    # flag exists to surface, and it must fire from a Goal earmark alone, not
+    # only from Pockets.
+    account.update_column(:balance, 200)
+
+    assert account.reload.pockets_overflow?
+  end
 end

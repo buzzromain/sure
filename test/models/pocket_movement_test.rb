@@ -62,7 +62,7 @@ class PocketMovementTest < ActiveSupport::TestCase
     assert_raises(Pocket::MovementRefused) { pocket.withdraw_money!(-10) }
   end
 
-  test "manual movements and tag-fill add up rather than one overwriting the other" do
+  test "manual movements and tag-fill (outflows) add up rather than one overwriting the other" do
     account = Account.create!(family: @family, accountable: Depository.new, name: "Shared", currency: "USD", balance: 5_000)
     pocket = account.pockets.create!(name: "Groceries", allocated_amount: 0, currency: "USD",
                                       link_new_tag: true, fill_direction: "outflows")
@@ -70,17 +70,45 @@ class PocketMovementTest < ActiveSupport::TestCase
     pocket.add_money!(100)
     assert_equal 100, pocket.reload.allocated_amount
 
+    # Tagging an expense with an `outflows` pocket DEBITS it: this is money
+    # spent FROM the reserve, not money saved toward it.
     entry = account.entries.create!(name: "Groceries run", date: Date.current, amount: 40,
                                      currency: "USD", entryable: Transaction.new)
     entry.entryable.tags << pocket.tag
 
-    assert_equal 140, pocket.reload.allocated_amount
+    assert_equal 60, pocket.reload.allocated_amount
 
     pocket.withdraw_money!(20)
-    assert_equal 120, pocket.reload.allocated_amount
+    assert_equal 40, pocket.reload.allocated_amount
 
     entry.entryable.tags.delete(pocket.tag)
-    assert_equal 80, pocket.reload.allocated_amount, "removing the tag should only undo the tag's own contribution"
+    assert_equal 80, pocket.reload.allocated_amount, "removing the tag should only undo the tag's own (debit) contribution"
+  end
+
+  test "an outflows tag can drive the pocket below its manual balance, floored at zero" do
+    account = Account.create!(family: @family, accountable: Depository.new, name: "Shared", currency: "USD", balance: 5_000)
+    pocket = account.pockets.create!(name: "Groceries", allocated_amount: 0, currency: "USD",
+                                      link_new_tag: true, fill_direction: "outflows")
+    pocket.add_money!(30)
+
+    entry = account.entries.create!(name: "Big grocery run", date: Date.current, amount: 100,
+                                     currency: "USD", entryable: Transaction.new)
+    entry.entryable.tags << pocket.tag
+
+    assert_equal 0, pocket.reload.allocated_amount,
+      "a debit larger than the manual balance must floor at 0, not go negative"
+  end
+
+  test "tag-fill (inflows) still credits the pocket on a tagged deposit" do
+    account = Account.create!(family: @family, accountable: Depository.new, name: "Shared", currency: "USD", balance: 5_000)
+    pocket = account.pockets.create!(name: "Bonus savings", allocated_amount: 0, currency: "USD",
+                                      link_new_tag: true, fill_direction: "inflows")
+
+    entry = account.entries.create!(name: "Work bonus", date: Date.current, amount: -200,
+                                     currency: "USD", entryable: Transaction.new)
+    entry.entryable.tags << pocket.tag
+
+    assert_equal 200, pocket.reload.allocated_amount
   end
 
   private

@@ -453,6 +453,11 @@ class Goal < ApplicationRecord
   # whole-account link is counted for the remainder it actually claims rather
   # than the zero its nil allocation would suggest.
   def backing_within(account_ids)
+    if pocket_id.present?
+      return pocket.allocated_amount.to_d if Array(account_ids).include?(pocket.account_id)
+      return 0.to_d
+    end
+
     ids = Array(account_ids).to_set
     linked_accounts
       .select { |account| account.currency == currency && ids.include?(account.id) }

@@ -2,9 +2,9 @@
 
 <% pockets = account.pockets.includes(:tag, :goal).order(:name).to_a %>
 <% pockets_total = pockets.sum(&:allocated_amount) %>
-<% overflow = account.pockets_overflow?(pockets_total) %>
+<% overflow = account.pockets_overflow? %>
 <% account_balance = account.balance.to_f %>
-<% free_balance = account.free_balance(pockets_total) %>
+<% free_balance = account.free_balance %>
 <% free_amount = [ free_balance, 0 ].max.to_f %>
 
 <div id="<%= dom_id(account, :pockets_content) %>" class="space-y-4 px-3">

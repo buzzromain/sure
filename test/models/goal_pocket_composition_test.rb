@@ -1,14 +1,11 @@
 require "test_helper"
 
-# Reference invariants for "mettre de côté" (docs/mettre-de-cote-recommandation-produit-technique.md),
-# fixed BEFORE any production code changes so the rest of that document's
-# implementation plan has a contract to work against.
-#
-# Two tests here are deliberately RED today — titled "KNOWN GAP" — because they
-# assert the target behaviour from the design doc's §5.1, not what the code
-# currently does. They exist to be turned green by Step 2 of that plan (a
-# shared Account-level reservation view for Pocket + GoalAccount), not to be
-# "fixed" by editing the assertion.
+# Reference invariants for "mettre de côté" (docs/mettre-de-cote-recommandation-produit-technique.md).
+# The first two tests below were introduced in Step 1 as deliberately red
+# "KNOWN GAP" tests; Step 2 (shared Account#reserved_total for Pocket +
+# GoalAccount, and a pocket-aware Goal#backing_within) turned them green —
+# the assertions are unchanged, only the framing is, since they already
+# described the target behaviour.
 class GoalPocketCompositionTest < ActiveSupport::TestCase
   include EntriesTestHelper
 
@@ -16,9 +13,9 @@ class GoalPocketCompositionTest < ActiveSupport::TestCase
     @family = families(:dylan_family)
   end
 
-  # --- KNOWN GAP (Step 2): Pocket and GoalAccount caps don't see each other ---
+  # --- Pocket and GoalAccount share one reservation total (Account#reserved_total) ---
 
-  test "KNOWN GAP: a Pocket can still reserve past what a Goal already earmarked on the same account" do
+  test "a Pocket cannot reserve past what a Goal already earmarked on the same account" do
     account = Account.create!(family: @family, accountable: Depository.new, name: "Shared pot",
                                currency: "USD", balance: 1_000)
     goal = Goal.new(family: @family, name: "Taxes", target_amount: 700, currency: "USD")
@@ -28,24 +25,23 @@ class GoalPocketCompositionTest < ActiveSupport::TestCase
     pocket = account.pockets.build(name: "Emergency", allocated_amount: 500, currency: "USD")
 
     assert_not pocket.valid?,
-      "Pocket#total_pockets_within_account_balance only sums account.pockets — it does not " \
-      "see the Goal's 700 already earmarked here, so a 500 Pocket is accepted on an account " \
-      "with only 300 actually free. Fix in Step 2 (docs/mettre-de-cote-recommandation-produit-technique.md §5.1: " \
-      "\"réserver davantage vérifie la capacité restante commune aux Pockets et aux Goals\")."
+      "only 300 is actually free after the Goal's 700 earmark on this account"
+    assert pocket.errors.of_kind?(:allocated_amount, :exceeds_account_balance)
   end
 
-  test "KNOWN GAP: Goal#backing_within ignores a composed Pocket's balance" do
+  test "Goal#backing_within reads a composed Pocket's balance" do
     account = Account.create!(family: @family, accountable: Depository.new, name: "Pocket-backed reserve",
                                currency: "USD", balance: 900)
     pocket = account.pockets.create!(name: "Sinking fund", allocated_amount: 900, currency: "USD")
     goal = Goal.create!(family: @family, name: "Composed", target_amount: 900, currency: "USD", pocket: pocket)
 
-    assert_equal 900, goal.current_balance, "current_balance does read the composed pocket"
+    assert_equal 900, goal.current_balance
     assert_equal 900, goal.backing_within([ account.id ]),
-      "backing_within falls back to linked_accounts, which is empty for a pocket-composed goal " \
-      "(no goal_accounts required — see Goal#must_have_at_least_one_linked_account), so it reports 0 " \
-      "instead of the pocket's balance. The budget reads backing_within, not current_balance, so this " \
-      "understates what a pocket-composed goal already reserves."
+      "the budget reads backing_within, not current_balance, to know what a goal already reserves"
+    assert_equal 0, goal.backing_within([ Account.create!(family: @family, accountable: Depository.new,
+                                                            name: "Unrelated", currency: "USD",
+                                                            balance: 0).id ]),
+      "a pocket-composed goal backs only the account its pocket actually lives on"
   end
 
   # --- Already-true invariants, fixed here as regression coverage ---
