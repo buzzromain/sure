@@ -400,6 +400,13 @@ class BudgetCategoryTest < ActiveSupport::TestCase
     end
   end
 
+  test "suggested_daily_spending is nil for a category backing a maintained reserve" do
+    Goal.create!(family: @family, name: "Emergency fund", target_amount: 5000, currency: "USD",
+                 kind: "maintained", funding_category: @parent_category)
+
+    assert_nil @parent_budget_category.suggested_daily_spending
+  end
+
   # --- move_allocation! (Lot A2) ---
 
   test "moving money between two top-level envelopes conserves the total" do

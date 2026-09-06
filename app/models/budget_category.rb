@@ -483,6 +483,11 @@ class BudgetCategory < ApplicationRecord
   def suggested_daily_spending
     return nil unless available_to_spend > 0
     return nil unless budget.current?
+    # A category backing a maintained (permanent-reserve) goal isn't meant to
+    # be spent down evenly across the month -- it's meant to sit there until
+    # needed. "Suggested $X/day" reads as pressure to spend a fund whose
+    # whole point is not spending it.
+    return nil if category.funding_goal&.maintained?
 
     days_remaining = budget.days_remaining
     return nil unless days_remaining > 0
