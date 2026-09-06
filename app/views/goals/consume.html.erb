@@ -8,10 +8,13 @@
     <%= styled_form_with url: consume_goal_path(@goal), method: :post, class: "space-y-4" do |f| %>
       <div class="space-y-1">
         <%= label_tag :amount, t(".amount_label"), class: "text-sm text-secondary" %>
+        <%# No max: a real spend past the target is allowed through (see
+            Goal#consume!/#overshot?) -- this field capping input at what was
+            still needed would silently reintroduce the refusal from the
+            browser side. %>
         <%= number_field_tag :amount, nil,
                              step: Money::Currency.new(@goal.currency).step,
                              min: Money::Currency.new(@goal.currency).step,
-                             max: (@goal.target_amount.to_d - @goal.consumed_amount.to_d).to_f,
                              required: true,
                              autocomplete: "off",
                              autofocus: true,
