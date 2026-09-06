@@ -35,6 +35,16 @@ class Entry < ApplicationRecord
   validate :split_child_date_matches_parent
 
   before_destroy :prevent_individual_child_deletion, if: :split_child?
+  # Symmetric to Transaction's own category-change hook: amount/date/excluded
+  # live on Entry, not Transaction, so this is where those have to be caught.
+  # excluded matters because actual_spending's underlying query filters on it
+  # (toggling it -- the standalone "exclude from reports" action, or the
+  # convert-to-trade flow's soft-delete of the original transaction -- moves
+  # money in or out of the aggregate without touching amount/date/category).
+  # Scoped to transaction? -- a Valuation's amount/date changing is a balance
+  # correction, not a budget-relevant spend, and has no category at all.
+  after_commit :schedule_budget_rollover_recompute,
+    if: -> { transaction? && (destroyed? || saved_change_to_amount? || saved_change_to_date? || saved_change_to_excluded?) }
 
   scope :visible, -> {
     joins(:account).where(accounts: { status: [ "draft", "active" ] })
@@ -580,5 +590,17 @@ class Entry < ApplicationRecord
       return if destroyed_by_association || unsplitting
 
       throw :abort
+    end
+
+    # `account` can come back nil here despite the association being
+    # required: a destructive family-data reset destroys an account and its
+    # entries in the same transaction, and this fires in after_commit, once
+    # the whole transaction -- account row included -- is already gone. The
+    # in-memory account_id survives on this instance; the row it points to
+    # does not.
+    def schedule_budget_rollover_recompute
+      return unless account
+
+      RecomputeBudgetRolloverJob.schedule_for_account(account)
     end
 end

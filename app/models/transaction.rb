@@ -33,6 +33,17 @@ class Transaction < ApplicationRecord
   accepts_nested_attributes_for :taggings, allow_destroy: true
 
   after_save :clear_merchant_unlinked_association, if: :merchant_id_previously_changed?
+  # A category or kind change (or the transaction disappearing) shifts what a
+  # budget category's actual_spending was for whatever period it fell in --
+  # rolled_over_amount/adjustments_balance are materialized, not live, and go
+  # stale until something recomputes them again. destroyed? covers the row
+  # vanishing through Entry's cascade; category_id and kind are the two
+  # Transaction attributes the aggregate actually reads (kind, because
+  # Budget::BUDGET_EXCLUDED_KINDS drops transfers/cc_payments/one_time from
+  # it -- auto_match_transfers! reclassifying a transaction's kind after the
+  # fact changes actual_spending without touching its category).
+  after_commit :schedule_budget_rollover_recompute,
+    if: -> { destroyed? || saved_change_to_category_id? || saved_change_to_kind? }
 
   # Accessors for exchange_rate stored in extra jsonb field
   def exchange_rate
@@ -412,6 +423,23 @@ class Transaction < ApplicationRecord
       return unless family
 
       FamilyMerchantAssociation.where(family: family, merchant: merchant).delete_all
+    end
+
+    # A fresh, uncached lookup rather than `entry&.account`: some callers
+    # (create_transfer in tests, and any production code with the same
+    # shape) create a bare Transaction before creating the Entry that points
+    # back to it. Reading the `entry` association here -- even just to find
+    # there isn't one yet -- caches that nil on this in-memory instance, and
+    # nothing invalidates it when the Entry is created moments later from
+    # the account's side (`account.entries.create!(entryable: transaction)`)
+    # rather than through this object's own `entry=`. A caller holding onto
+    # that same Transaction instance afterward would then see a permanently
+    # stale nil `entry`, not the row that actually exists.
+    def schedule_budget_rollover_recompute
+      account = Entry.find_by(entryable: self)&.account
+      return unless account
+
+      RecomputeBudgetRolloverJob.schedule_for_account(account)
     end
 
     # A pocket's allocated_amount is a full recompute from its tagged
