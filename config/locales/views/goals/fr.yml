@@ -196,7 +196,6 @@ fr:
       errors:
         non_positive: Indiquez un montant supérieur à zéro.
         maintained: "Une réserve se ponctionne et se reconstitue, elle ne se dépense pas — ce qui lui manque apparaît déjà sur l'objectif."
-        exceeds_target: C'est plus que ce que cet objectif visait à épargner.
         account_required: Cet objectif est financé par plusieurs comptes — indiquez celui d'où vient l'argent.
         account_not_linked: Ce compte ne finance pas cet objectif.
         not_active: "Cet objectif n'est plus actif : rien ne peut y être enregistré."

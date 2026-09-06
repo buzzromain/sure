@@ -163,12 +163,60 @@ class GoalConsumptionTest < ActiveSupport::TestCase
     assert_equal :account_not_linked, error.reason
   end
 
-  test "consuming more than the goal ever set out to save is refused" do
+  # A real spend past the target is not refused: it was spent either way, and
+  # refusing it here would just lose track of it against the goal. It shows
+  # up as an explicit overshoot instead of being hidden behind a 100% ring.
+  test "a real spend past the target succeeds and is surfaced as an explicit overshoot" do
+    goal = goal_with(earmark: 6_000, balance: 6_000, target: 5_000)
+    refute goal.overshot?
+
+    goal.consume!(5_500)
+
+    assert_equal 5_500, goal.reload.consumed_amount
+    assert goal.overshot?
+    assert_equal 500, goal.overshoot_amount
+    assert_equal 500, goal.goal_accounts.first.reload.allocated_amount
+  end
+
+  # A whole-account link (no fixed earmark) computes what it still needs to
+  # reach the target minus this spend; once the spend overshoots the target
+  # that figure would go negative and win the [backed, still_needed].min
+  # below, leaving the link allocated a negative amount. Floored at 0.
+  test "an overshoot on a whole-account link floors the allocation at zero, not negative" do
+    account = fresh_account(6_000)
+    goal = @family.goals.create!(name: "Trip", target_amount: 5_000, currency: "USD") { |g| g.goal_accounts.build(account: account) }
+
+    goal.consume!(5_500)
+
+    assert_equal 5_500, goal.reload.consumed_amount
+    assert goal.overshot?
+    assert_equal 500, goal.overshoot_amount
+    assert_equal 0, goal.goal_accounts.first.reload.allocated_amount
+  end
+
+  # The earmark ceiling is a different constraint from the target and the
+  # doc is explicit that only the target refusal goes away: a request for
+  # more than the linked account actually backs is still refused, overshoot
+  # or not.
+  test "an amount the linked account does not actually back is still refused, target aside" do
     goal = goal_with(earmark: 5_000, balance: 5_000, target: 5_000)
 
     error = assert_raises(Goal::ConsumptionRefused) { goal.consume!(5_001) }
-    assert_equal :exceeds_target, error.reason
+    assert_equal :exceeds_earmark, error.reason
     assert_equal 0, goal.reload.consumed_amount
+  end
+
+  # The scope that keeps consume! able to overshoot: this must fire when the
+  # EDIT FORM lowers the target underneath what was already spent, but not
+  # when consume! itself raises consumed_amount past an unchanged target.
+  test "the edit form still refuses lowering the target below what was already spent" do
+    goal = goal_with(earmark: 6_000, balance: 6_000, target: 5_000)
+    goal.consume!(3_000)
+
+    goal.target_amount = 2_000
+
+    assert_not goal.valid?
+    assert goal.errors.of_kind?(:target_amount, :below_consumed)
   end
 
   test "a non-positive amount is refused" do
@@ -187,6 +235,18 @@ class GoalConsumptionTest < ActiveSupport::TestCase
 
     error = assert_raises(Goal::ConsumptionRefused) { reserve.consume!(1_000) }
     assert_equal :maintained, error.reason
+  end
+
+  # overshot? is a one_off concept: a maintained reserve refuses all
+  # consumption before consumed_amount could ever pass its target.
+  test "a reserve never reports an overshoot" do
+    account = fresh_account(9_000)
+    reserve = @family.goals.create!(
+      name: "Precaution", target_amount: 6_000, currency: "USD", kind: "maintained"
+    ) { |g| g.goal_accounts.build(account: account) }
+
+    refute reserve.overshot?
+    assert_equal 0, reserve.overshoot_amount
   end
 
   test "reopening a goal clears what was spent under its previous life" do

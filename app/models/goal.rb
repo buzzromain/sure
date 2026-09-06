@@ -720,12 +720,19 @@ class Goal < ApplicationRecord
 
     # The GOAL is locked, not just the link. `consumed_amount` lives here, and
     # two concurrent requests locking only their own links would both read the
-    # same old value, both pass the target check, and both add to it — the
-    # goal ending up consumed past its target with neither request at fault.
-    # The checks below therefore run under the lock, on freshly read values.
+    # same old value, both compute `still_needed` from it, and both add to it
+    # — the second request's earmark shrink landing on a stale figure. The
+    # checks below therefore run under the lock, on freshly read values.
+    #
+    # A real spend past the target is allowed through, not refused: refusing
+    # it here would either lose the transaction or leave it unrecorded
+    # against the goal, and the money was spent either way. `overshot?`/
+    # `overshoot_amount` surface it as an explicit state instead — a real
+    # expense outliving its savings target is not the same failure as a
+    # request that would overdraw what the linked account actually backs,
+    # which the earmark checks below still refuse.
     with_lock do
       raise ConsumptionRefused.new(:not_active) unless active?
-      raise ConsumptionRefused.new(:exceeds_target) if consumed_amount.to_d + amount > target_amount.to_d
 
       link.lock!
       stamp_consumption!(transaction) if transaction
@@ -760,15 +767,16 @@ class Goal < ApplicationRecord
         backed = backing_within([ link.account_id ]).to_d
 
         # Same refusal a fixed earmark gives, for the same reason: the link
-        # cannot have supplied money it never backed. `still_needed` cannot go
-        # negative — the target check above has already refused that.
+        # cannot have supplied money it never backed. This is the real
+        # ceiling on a bare-amount consumption — nothing above refuses an
+        # overshoot past the target any more, only an overshoot past what
+        # the account actually holds.
         #
         # Not when a transaction says so, though. `backed` reads the account's
         # balance NOW, and a recorded outflow has already been taken out of it:
         # spend 4,000 of a 5,000 account and `backed` is 1,000, so attributing
         # the very transaction the app itself surfaced was refused — and refused
-        # by an earmark the user never set. The target check above is the real
-        # ceiling, and it still holds.
+        # by an earmark the user never set.
         raise ConsumptionRefused.new(:exceeds_earmark) if transaction.nil? && amount > backed
 
         # The bypass above only holds if `amount` is what the transaction
@@ -778,7 +786,10 @@ class Goal < ApplicationRecord
         # than trusted, matching this file's fat-model conventions.
         raise ConsumptionRefused.new(:exceeds_earmark) if transaction && amount != transaction.entry.amount.to_d
 
-        still_needed = target_amount.to_d - consumed_amount.to_d - amount
+        # Floored at 0: an overshooting spend has nothing left to reach, and
+        # a negative `still_needed` would otherwise win the `min` below and
+        # leave the link's allocation negative.
+        still_needed = [ target_amount.to_d - consumed_amount.to_d - amount, 0 ].max
         link.update!(allocated_amount: [ backed, still_needed ].min)
       end
 
@@ -795,6 +806,24 @@ class Goal < ApplicationRecord
 
   def remaining_amount_money
     @remaining_amount_money ||= Money.new(remaining_amount, currency)
+  end
+
+  # A real spend past the target, made explicit rather than refused or
+  # silently absorbed -- remaining_amount and progress_percent both floor/cap
+  # at the target, so without this an overshoot reads identically to a goal
+  # that landed exactly on it. one_off only: consume! refuses all
+  # consumption on a maintained reserve before consumed_amount could ever
+  # exceed its target, so overshoot has no meaning there.
+  def overshot?
+    one_off? && consumed_amount.to_d > target_amount.to_d
+  end
+
+  def overshoot_amount
+    @overshoot_amount ||= [ consumed_amount.to_d - target_amount.to_d, 0 ].max
+  end
+
+  def overshoot_amount_money
+    @overshoot_amount_money ||= Money.new(overshoot_amount, currency)
   end
 
   # What progress actually counts: money still held for the goal, plus money
@@ -1521,6 +1550,7 @@ class Goal < ApplicationRecord
         @remaining_amount @remaining_amount_money
         @progress_percent @monthly_target_amount
         @progress_amount_money @consumed_amount_money
+        @overshoot_amount @overshoot_amount_money
         @pace @pace_money @status @pooled_allocations
       ].each do |ivar|
         remove_instance_variable(ivar) if instance_variable_defined?(ivar)
@@ -1647,10 +1677,15 @@ class Goal < ApplicationRecord
       errors.add(:kind, :locked_once_consumed)
     end
 
-    # The consumed total is checked while consuming, which left the ordinary
-    # edit form free to lower the target underneath it — a goal reporting more
-    # spent than it ever set out to save.
+    # Guards the ordinary edit form lowering the target underneath what has
+    # already been recorded as spent, silently turning a real overshoot into
+    # what looks like an ordinary edit. Scoped to target_amount actually
+    # changing, not to the two figures' current relationship: consume! itself
+    # now allows a real spend past the target through (see #consume!,
+    # #overshot?) by writing consumed_amount alone, and that write must not
+    # trip this same check on its own way through.
     def target_must_cover_what_was_consumed
+      return unless will_save_change_to_target_amount?
       return unless target_amount.present? && consumed_amount.to_d.positive?
       return if target_amount.to_d >= consumed_amount.to_d
 

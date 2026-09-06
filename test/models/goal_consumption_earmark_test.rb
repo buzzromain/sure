@@ -47,8 +47,10 @@ class GoalConsumptionEarmarkTest < ActiveSupport::TestCase
     assert_equal BigDecimal("0"), goal.reload.consumed_amount
   end
 
-  # The target is still the real ceiling either way.
-  test "a transaction bigger than the target is still refused" do
+  # The target is no longer a ceiling on a real, attested spend -- only the
+  # earmark (what the transaction shows actually left the account) still is.
+  # The overshoot becomes an explicit state instead of a refusal.
+  test "a transaction bigger than the target succeeds and overshoots explicitly" do
     account = fresh_account(5_000)
     goal = @family.goals.create!(name: "Trip", target_amount: 5_000, currency: "USD") do |g|
       g.goal_accounts.build(account: account)
@@ -56,7 +58,12 @@ class GoalConsumptionEarmarkTest < ActiveSupport::TestCase
     entry = spend(account, 6_000, 5.days.ago)
     account.update!(balance: -1_000)
 
-    assert_raises(Goal::ConsumptionRefused) { goal.consume!(6_000, transaction: entry.entryable) }
+    goal.consume!(6_000, transaction: entry.entryable)
+
+    assert_equal BigDecimal("6000"), goal.reload.consumed_amount
+    assert goal.overshot?
+    assert_equal 1_000, goal.overshoot_amount
+    assert_equal 0, goal.goal_accounts.first.reload.allocated_amount
   end
 
   private
