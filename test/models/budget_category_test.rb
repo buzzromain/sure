@@ -680,11 +680,15 @@ class BudgetCategoryRolloverTest < ActiveSupport::TestCase
   end
 
   test "an overspent month rolls over as a negative, and a fresh allocation only partly offsets it" do
-    first = initialized_budget(2.months.ago)
+    # Anchored to SIGNED_CARRY_SINCE -- see the comment on the equivalent
+    # anchoring below in "an overspend carries forward...".
+    since = Budget::RolloverCalculator::SIGNED_CARRY_SINCE
+
+    first = initialized_budget(since)
     allocate(first, 100)
     spend(150, budget: first)
 
-    second = initialized_budget(1.month.ago)
+    second = initialized_budget(since + 1.month)
     allocate(second, 100)
 
     recompute!
@@ -1325,11 +1329,17 @@ class BudgetCategoryRolloverTest < ActiveSupport::TestCase
 
   # Step 3: RolloverCalculator#leftover_for no longer floors at zero.
   test "an overspend carries forward as a negative rollover across two transitions" do
-    first = initialized_budget(2.months.ago)
+    # Anchored to SIGNED_CARRY_SINCE rather than Date.current/N.months.ago:
+    # a period ending before that date floors its carry at zero regardless of
+    # overspend (Step 6 of the "mettre de côté" plan — see the constant's
+    # comment), so this test's whole premise requires periods on or after it.
+    since = Budget::RolloverCalculator::SIGNED_CARRY_SINCE
+
+    first = initialized_budget(since)
     allocate(first, 100)
     spend(150, budget: first)
 
-    second = initialized_budget(1.month.ago)
+    second = initialized_budget(since + 1.month)
     allocate(second, 0)
 
     recompute!
@@ -1341,13 +1351,57 @@ class BudgetCategoryRolloverTest < ActiveSupport::TestCase
     assert_equal(-50, second_bc.available_to_spend)
     assert_equal 0, second_bc.percent_of_budget_spent, "nothing was spent THIS period, so 0% of it, despite the deficit"
 
-    third = initialized_budget(Date.current)
+    third = initialized_budget(since + 2.months)
     allocate(third, 0)
 
     recompute!
 
     assert_equal(-50, stored_rollover(third),
       "the deficit survives untouched into a third period with nothing to close it")
+  end
+
+  test "an overspend before the signed-carry cutover stays floored at zero, matching legacy positive_only behavior" do
+    since = Budget::RolloverCalculator::SIGNED_CARRY_SINCE
+
+    first = initialized_budget(since - 2.months)
+    allocate(first, 100)
+    spend(150, budget: first)
+
+    second = initialized_budget(since - 1.month)
+    allocate(second, 0)
+
+    recompute!
+
+    assert_equal 0, stored_rollover(second),
+      "a period ending before the cutover must keep the old floored-at-zero carry, not invent overspend history"
+  end
+
+  test "a chain crossing the signed-carry cutover starts the signed side from a floored, non-negative incoming carry" do
+    # stored_rollover(budget) is the carry INTO that budget, not its own
+    # outgoing leftover -- a period's own overspend only shows up as the
+    # NEXT period's incoming value (see updates << ... "rolled_over_amount"
+    # => incoming in recompute_chain!). So the assertions below check
+    # `signed`'s incoming (from the floored period) and `after_signed`'s
+    # incoming (from `signed`'s own, now-unfloored, overspend).
+    since = Budget::RolloverCalculator::SIGNED_CARRY_SINCE
+
+    floored = initialized_budget(since - 1.month)
+    allocate(floored, 100)
+    spend(150, budget: floored)
+
+    signed = initialized_budget(since)
+    allocate(signed, 0)
+    spend(30, budget: signed)
+
+    after_signed = initialized_budget(since + 1.month)
+    allocate(after_signed, 0)
+
+    recompute!
+
+    assert_equal 0, stored_rollover(signed),
+      "signed inherits 0 from the floored period's overspend, not a phantom deficit"
+    assert_equal(-30, stored_rollover(after_signed),
+      "signed's own overspend carries forward unfloored, since signed itself is on or after the cutover")
   end
 
   private

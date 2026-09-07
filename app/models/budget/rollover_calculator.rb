@@ -12,6 +12,22 @@ class Budget::RolloverCalculator
   # other pg_advisory_lock user in the application.
   LOCK_NAMESPACE = 1_920_231_276
 
+  # Step 6 of docs/mettre-de-cote-recommandation-produit-technique.md: the
+  # unclamped ("signed") leftover_for below replaced an earlier version that
+  # floored every carry at zero ("positive_only") — but the floored version
+  # already shipped to self-hosted instances tracking main/edge and the
+  # v0.7.4-alpha/rc tags. rolled_over_amount is a materialized column
+  # recomputed lazily for the WHOLE chain back to the first month rollover
+  # was ever enabled (see first_relevant_budget_date/chain below), so
+  # recomputing an existing chain under the signed formula would silently
+  # reinterpret every historical floored-at-zero month as a carried deficit
+  # the moment anything (an edited transaction, a new allocation) next
+  # triggered a recompute — inventing overspend history that was never
+  # actually tracked as debt. Periods ending before this date keep the old
+  # floored behavior; only periods from here on get a genuine signed carry.
+  # Bump forward if this lot's merge slips past the date below.
+  SIGNED_CARRY_SINCE = Date.new(2026, 10, 1)
+
   def initialize(family:, user:)
     @family = family
     @user = user
@@ -253,7 +269,8 @@ class Budget::RolloverCalculator
     # budgeted + rolled_over − actual, signed: an overspent envelope carries
     # its deficit into the next period instead of stopping at the month it
     # happened in, matching what BudgetCategory#over_budget?/#available_to_spend
-    # already report for the current period.
+    # already report for the current period. Floored at zero for any period
+    # ending before SIGNED_CARRY_SINCE — see the constant's comment above.
     def leftover_for(budget, budget_category, incoming, ring_fenced_children)
       budgeted = (budget_category[:budgeted_spending] || 0) + incoming
       actual = budget.budget_category_actual_spending(budget_category)
@@ -267,6 +284,9 @@ class Budget::RolloverCalculator
         actual -= budget.budget_category_actual_spending(child)
       end
 
-      budgeted - actual
+      leftover = budgeted - actual
+      return leftover if budget.end_date >= SIGNED_CARRY_SINCE
+
+      [ leftover, 0 ].max
     end
 end
