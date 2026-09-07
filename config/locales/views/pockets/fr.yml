@@ -27,6 +27,7 @@ fr:
         both: "Toutes les transactions étiquetées"
       auto_fill_hint: "Les transactions avec cette étiquette mettront automatiquement à jour cette enveloppe."
       free_balance_hint: "Disponible à attribuer : %{amount}"
+      add_target: "Ajouter une cible"
       save: "Enregistrer"
     pocket:
       overflow_badge: "DÉPASSEMENT"

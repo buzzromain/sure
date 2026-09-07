@@ -55,6 +55,23 @@
     <p class="text-xs text-secondary"><%= t("pockets.form.auto_fill_hint") %></p>
   </div>
 
+  <% unless pocket.persisted? %>
+    <%# Optional target, created atomically with the pocket (PocketsController#create) --
+        no kind picker here on purpose: this stays kind: "one_off" with no target_date.
+        A maintained/months-of-expenses goal, or a target added after the fact, still goes
+        through the full "Ajouter un objectif" flow (pocket_goals#new), unchanged. %>
+    <section>
+      <%= render DS::Disclosure.new(title: t(".add_target"), open: false, variant: :inline) do %>
+        <div class="pt-2">
+          <%= f.money_field :target_amount,
+            label: t("goals.form.fields.target_amount"),
+            required: false,
+            disable_currency: true %>
+        </div>
+      <% end %>
+    </section>
+  <% end %>
+
   <% if account.pockets.any? || pocket.persisted? %>
     <div class="bg-container-inset rounded-lg p-3 text-sm text-secondary flex items-center gap-2">
       <%= icon("info", size: "sm", class: "shrink-0") %>

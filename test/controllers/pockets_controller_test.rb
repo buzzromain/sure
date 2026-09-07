@@ -10,6 +10,51 @@ class PocketsControllerTest < ActionDispatch::IntegrationTest
     @pocket = @account.pockets.create!(name: "Groceries", allocated_amount: 500, currency: @account.currency)
   end
 
+  test "create with a target amount creates the pocket and a one_off goal atomically" do
+    assert_difference [ "Pocket.count", "Goal.count" ], 1 do
+      post account_pockets_path(@account), params: {
+        pocket: { name: "Trip", allocated_amount: "100", target_amount: "500" }
+      }
+    end
+
+    pocket = Pocket.find_by!(name: "Trip")
+    goal = pocket.goal
+    assert_not_nil goal
+    assert_equal "one_off", goal.kind
+    assert_equal 500, goal.target_amount
+    assert_nil goal.target_date
+  end
+
+  test "create with a blank target amount creates only the pocket" do
+    assert_difference "Pocket.count", 1 do
+      assert_no_difference "Goal.count" do
+        post account_pockets_path(@account), params: {
+          pocket: { name: "Trip", allocated_amount: "100", target_amount: "" }
+        }
+      end
+    end
+  end
+
+  test "an invalid pocket with a target amount rolls back before the goal is ever attempted" do
+    assert_no_difference [ "Pocket.count", "Goal.count" ] do
+      post account_pockets_path(@account), params: {
+        pocket: { name: "", allocated_amount: "100", target_amount: "500" }
+      }
+    end
+
+    assert_response :unprocessable_entity
+  end
+
+  test "a negative or zero target amount is treated as no target, not an error" do
+    assert_difference "Pocket.count", 1 do
+      assert_no_difference "Goal.count" do
+        post account_pockets_path(@account), params: {
+          pocket: { name: "Trip", allocated_amount: "100", target_amount: "-50" }
+        }
+      end
+    end
+  end
+
   test "new renders the form without crashing" do
     get new_account_pocket_path(@account)
     assert_response :success
