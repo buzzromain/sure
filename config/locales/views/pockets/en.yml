@@ -66,11 +66,11 @@ en:
         exceeds_balance: "That is more than this pocket currently holds."
         exceeds_account_balance: "That would allocate more than this account actually has free."
     convert_to_envelope:
-      title: "Convert to budget envelope · %{name}"
-      explanation: "Currently holding %{amount}. This will become the envelope's opening balance, and this pocket will be removed."
+      title: "Convert \"%{name}\" to a budget envelope"
+      explanation: "\"%{name}\" currently holds %{amount} and will be removed: that amount becomes the opening balance of the budget envelope, on the category you choose."
       category_label: "Category"
       submit: "Convert"
-      success: "Converted to a budget envelope on %{category}."
+      success: "\"%{name}\" converted to a budget envelope on %{category}."
       errors:
         category_required: "Choose a category to convert into."
         category_taken: "That category is already funding a different goal."

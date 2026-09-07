@@ -67,11 +67,11 @@ fr:
         exceeds_balance: "C'est plus que ce que cette enveloppe contient actuellement."
         exceeds_account_balance: "Cela attribuerait plus que le solde non réservé de ce compte."
     convert_to_envelope:
-      title: "Convertir en enveloppe budgétaire · %{name}"
-      explanation: "Contient actuellement %{amount}. Cela deviendra le solde d'ouverture de l'enveloppe budgétaire, et cette enveloppe sera supprimée."
+      title: "Convertir « %{name} » en enveloppe budgétaire"
+      explanation: "« %{name} » contient actuellement %{amount} et sera supprimée : ce montant deviendra le solde d'ouverture de l'enveloppe budgétaire, sur la catégorie choisie."
       category_label: "Catégorie"
       submit: "Convertir"
-      success: "Converti en enveloppe budgétaire sur %{category}."
+      success: "« %{name} » convertie en enveloppe budgétaire sur %{category}."
       errors:
         category_required: "Choisissez une catégorie vers laquelle convertir."
         category_taken: "Cette catégorie finance déjà un autre objectif."

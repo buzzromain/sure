@@ -99,10 +99,11 @@ class PocketsController < ApplicationController
 
   def create_envelope_conversion
     category = Current.family.categories.find(params[:category_id])
+    pocket_name = @pocket.name
     @pocket.convert_to_envelope!(category: category)
     Budget::RolloverCalculator.new(family: Current.family, user: nil).recompute!
 
-    notice = t("pockets.convert_to_envelope.success", category: category.display_name)
+    notice = t("pockets.convert_to_envelope.success", name: pocket_name, category: category.display_name)
     respond_to do |format|
       format.turbo_stream { render_pocket_streams(notice) }
       format.html { redirect_to account_path(@account, tab: :pockets), notice: notice }

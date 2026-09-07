@@ -8,7 +8,7 @@
   <% dialog.with_body do %>
     <%= form_with url: convert_to_envelope_account_pocket_path(@account, @pocket), method: :post, class: "space-y-4" do %>
       <p class="text-sm text-secondary">
-        <%= t(".explanation", amount: @pocket.allocated_amount_money.format(precision: 0)) %>
+        <%= t(".explanation", name: @pocket.name, amount: @pocket.allocated_amount_money.format(precision: 0)) %>
       </p>
 
       <div class="space-y-1">
