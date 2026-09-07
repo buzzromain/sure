@@ -136,6 +136,7 @@ en:
       button_title: Record an opening balance
       dialog_title: Record an opening balance
       amount_label: Amount
+      add_target: Add a target
       note_label: "Note (optional)"
       cancel: Cancel
       submit: Record

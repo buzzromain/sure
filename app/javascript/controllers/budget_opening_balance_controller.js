@@ -5,13 +5,14 @@ import { Controller } from "@hotwired/stimulus"
 // only ever credits the row that opened it -- so there is nothing here
 // budget_move_controller's #refreshOptions has that this needs.
 export default class extends Controller {
-  static targets = ["dialog", "categoryId", "categoryName", "amount", "note", "submit"]
+  static targets = ["dialog", "categoryId", "categoryName", "amount", "note", "targetAmount", "submit"]
 
   open({ params }) {
     this.categoryIdTarget.value = params.categoryId
     this.categoryNameTarget.textContent = params.categoryName
     this.amountTarget.value = ""
     this.noteTarget.value = ""
+    if (this.hasTargetAmountTarget) this.targetAmountTarget.value = ""
 
     this.dialogTarget.showModal()
     this.amountTarget.focus()

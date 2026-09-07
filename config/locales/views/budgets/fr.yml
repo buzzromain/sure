@@ -71,6 +71,7 @@ fr:
       to_label: Vers
     opening_balance:
       amount_label: Montant
+      add_target: Ajouter une cible
       button_title: Enregistrer un solde initial
       cancel: Annuler
       dialog_title: Enregistrer un solde initial

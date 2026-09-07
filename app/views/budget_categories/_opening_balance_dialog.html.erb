@@ -43,6 +43,29 @@
                            data: { budget_opening_balance_target: "note" } %>
       </div>
 
+      <%# Household budgets only: a funding_category-linked Goal always reads
+          the household chain (Goal#current_funding_budget_category), never a
+          personal one -- offering this on a personal budget would create a
+          Goal whose balance can never resolve to anything coherent. No kind
+          picker, same reasoning as the pocket form's own target section: this
+          stays kind: one_off, no target_date. A maintained/months-of-expenses
+          goal, or a target added later, still goes through the full "Ajouter
+          un objectif" flow (BudgetCategoryGoalsController), unchanged. %>
+      <% unless budget.user %>
+        <%= render DS::Disclosure.new(title: t("budget_categories.opening_balance.add_target"), open: false, variant: :inline) do %>
+          <div class="space-y-1 pt-2">
+            <%= label_tag "budget_adjustment_opening_balance_target_amount", t("goals.form.fields.target_amount"), class: "text-sm text-secondary" %>
+            <%= number_field_tag "budget_adjustment_opening_balance[target_amount]", nil,
+                                 id: "budget_adjustment_opening_balance_target_amount",
+                                 step: Money::Currency.new(budget.currency).step,
+                                 min: Money::Currency.new(budget.currency).step,
+                                 autocomplete: "off",
+                                 class: "form-field__input w-full text-right tabular-nums privacy-sensitive",
+                                 data: { budget_opening_balance_target: "targetAmount" } %>
+          </div>
+        <% end %>
+      <% end %>
+
       <div class="flex justify-end gap-2 pt-1">
         <%= render DS::Button.new(text: t("budget_categories.opening_balance.cancel"),
                                   variant: "secondary",

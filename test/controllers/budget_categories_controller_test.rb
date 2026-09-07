@@ -493,6 +493,68 @@ class BudgetCategoriesControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
   end
+
+  test "record_opening_balance with a target amount on a household budget also creates a one_off goal" do
+    assert_difference "Goal.count", 1 do
+      post record_opening_balance_budget_budget_categories_path(@budget),
+           params: { category_id: @parent_category.id,
+                     budget_adjustment_opening_balance: { amount: "150", target_amount: "500" } },
+           as: :turbo_stream
+    end
+
+    assert_response :success
+    goal = @parent_category.reload.funding_goal
+    assert_not_nil goal
+    assert_equal "one_off", goal.kind
+    assert_equal 500, goal.target_amount
+    assert_nil goal.target_date
+  end
+
+  test "record_opening_balance with a blank target amount creates no goal" do
+    assert_no_difference "Goal.count" do
+      post record_opening_balance_budget_budget_categories_path(@budget),
+           params: { category_id: @parent_category.id, budget_adjustment_opening_balance: { amount: "150" } },
+           as: :turbo_stream
+    end
+
+    assert_nil @parent_category.reload.funding_goal
+  end
+
+  test "record_opening_balance ignores a target amount on a personal budget, but still records the balance" do
+    @family.update!(personal_budgets: true)
+    owner = users(:family_member)
+    sign_in owner
+    personal_budget = Budget.find_or_bootstrap(@family, start_date: @budget.start_date, user: owner)
+
+    assert_no_difference "Goal.count" do
+      post record_opening_balance_budget_budget_categories_path(personal_budget),
+           params: { category_id: @parent_category.id,
+                     budget_adjustment_opening_balance: { amount: "150", target_amount: "500" } },
+           as: :turbo_stream
+    end
+
+    assert_response :success
+    assert_nil @parent_category.reload.funding_goal
+    assert_equal 1, BudgetAdjustment.where(category: @parent_category, kind: "opening_balance", user: owner).count
+  end
+
+  # Same race Étape 5 guards against (BudgetCategoryGoalsController#create),
+  # now reachable from this dialog too: a target amount for a category that
+  # already funds another goal must roll back the opening balance as well,
+  # not record it while silently dropping the goal.
+  test "record_opening_balance with a target amount for an already-funded category rolls back entirely" do
+    @family.goals.create!(name: "Existing envelope goal", target_amount: 500, currency: @family.currency,
+                           funding_category: @parent_category)
+
+    assert_no_difference [ "Goal.count", "BudgetAdjustment.count" ] do
+      post record_opening_balance_budget_budget_categories_path(@budget),
+           params: { category_id: @parent_category.id,
+                     budget_adjustment_opening_balance: { amount: "150", target_amount: "500" } },
+           as: :turbo_stream
+    end
+
+    assert_response :unprocessable_entity
+  end
 end
 
 class BudgetCategoriesControllerSharingTest < ActionDispatch::IntegrationTest

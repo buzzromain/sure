@@ -153,10 +153,28 @@ class BudgetCategoriesController < ApplicationController
   # model's own default validation message.
   def record_opening_balance
     @budget_category = @budget.budget_categories.find_by!(category_id: params[:category_id])
+    target_amount = opening_balance_target_amount_param
 
-    BudgetAdjustment.record_opening_balance!(category: @budget_category.category, amount: opening_balance_amount_param,
-                                              family: @budget.family, user: @budget.user, currency: @budget_category.currency,
-                                              note: opening_balance_note_param)
+    ActiveRecord::Base.transaction do
+      BudgetAdjustment.record_opening_balance!(category: @budget_category.category, amount: opening_balance_amount_param,
+                                                family: @budget.family, user: @budget.user, currency: @budget_category.currency,
+                                                note: opening_balance_note_param)
+
+      # No kind picker here on purpose -- kept to the simplest shape
+      # (one_off, no target_date), same as the pocket form's own target
+      # section. Household budgets only: see the view partial's comment on
+      # why a personal budget never offers this. A maintained/months-of-
+      # expenses goal, or a target added later, still goes through the full
+      # "Ajouter un objectif" flow (BudgetCategoryGoalsController), unchanged.
+      if target_amount&.positive? && @budget.user.nil?
+        @goal = @budget_category.category.build_funding_goal(
+          name: @budget_category.category.display_name, target_amount: target_amount,
+          currency: @budget_category.currency, family: @budget.family, kind: "one_off"
+        )
+        @goal.save!
+      end
+    end
+
     Budget::RolloverCalculator.new(family: @budget.family, user: @budget.user).recompute!
 
     @budget_category.reload
@@ -165,7 +183,11 @@ class BudgetCategoriesController < ApplicationController
       format.turbo_stream
       format.html { redirect_to budget_budget_categories_path(@budget, **budget_owner_query), notice: t("budget_categories.opening_balance.success") }
     end
-  rescue ActiveRecord::RecordInvalid
+  # RecordNotUnique alongside RecordInvalid: same funding_category_id race
+  # Étape 5 (BudgetCategoryGoalsController) guards against -- a target
+  # amount here can now hit it too, when two concurrent requests both try
+  # to fund a goal from the same category.
+  rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique
     flash.now[:alert] = t("budget_categories.opening_balance.errors.invalid")
     respond_to do |format|
       format.turbo_stream { render turbo_stream: flash_notification_stream_items, status: :unprocessable_entity }
@@ -193,6 +215,12 @@ class BudgetCategoriesController < ApplicationController
 
     def opening_balance_note_param
       params.require(:budget_adjustment_opening_balance).permit(:note).fetch(:note, nil).presence
+    end
+
+    # Not a BudgetAdjustment attribute -- read separately, only ever used to
+    # (maybe) build a Goal in the same transaction.
+    def opening_balance_target_amount_param
+      params.require(:budget_adjustment_opening_balance).permit(:target_amount).fetch(:target_amount, nil).presence&.to_d
     end
 
     def rollover_enabled_param
