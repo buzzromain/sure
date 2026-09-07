@@ -23,7 +23,14 @@ class Pocket < ApplicationRecord
   validates :name, :currency, presence: true
   validate :account_must_be_depository
   validates :allocated_amount, numericality: { greater_than_or_equal_to: 0 }
-  validate :total_pockets_within_account_balance
+  # Only re-checked when allocated_amount itself moves (or on create): an
+  # account can drift into overflow after this pocket was created (another
+  # pocket or goal grew, the balance shrank) without this pocket's own
+  # allocated_amount changing. Validating unconditionally on every save would
+  # then refuse EVERY future edit -- even renaming the pocket or lowering
+  # allocated_amount back toward room -- since room stays negative until
+  # something else frees it up.
+  validate :total_pockets_within_account_balance, if: -> { new_record? || allocated_amount_changed? }
   validate :tag_belongs_to_same_family
 
   # Composition sketch (PR #2892 discussion): same reasoning as Goal's own
@@ -190,7 +197,7 @@ class Pocket < ApplicationRecord
         ).joins(
           "INNER JOIN taggings ON taggings.taggable_id = transactions.id
              AND taggings.taggable_type = 'Transaction'"
-        ).where(entries: { account_id: account_id, currency: currency })
+        ).where(entries: { account_id: account_id, currency: currency, excluded: false })
          .where(taggings: { tag_id: tag_id })
          .select("DISTINCT entries.id, entries.amount")
 
