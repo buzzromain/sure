@@ -18,6 +18,15 @@ class Pocket < ApplicationRecord
     end
   end
 
+  class ConversionRefused < StandardError
+    attr_reader :reason
+
+    def initialize(reason)
+      @reason = reason
+      super("pocket conversion refused: #{reason}")
+    end
+  end
+
   enum :fill_direction, { inflows: "inflows", outflows: "outflows", both: "both" }, default: :inflows
 
   validates :name, :currency, presence: true
@@ -131,6 +140,38 @@ class Pocket < ApplicationRecord
 
     reload
     self
+  end
+
+  # Replaces this account-level reservation with a budget envelope: the
+  # pocket's current balance becomes an opening BudgetAdjustment on
+  # `category`, a linked goal (if any) is re-pointed to fund from the
+  # category instead, and the pocket itself is destroyed -- this is the
+  # source reservation being replaced, not duplicated alongside a new one.
+  def convert_to_envelope!(category:)
+    raise ConversionRefused.new(:different_families) unless category.family_id == account.family_id
+
+    amount = allocated_amount.to_d
+    linked_goal = goal
+
+    transaction do
+      # A zero-amount opening balance would fail
+      # chk_budget_adjustments_amount_not_zero -- the envelope just starts
+      # empty instead.
+      if amount.positive?
+        BudgetAdjustment.record_opening_balance!(
+          category: category, amount: amount, family: account.family, currency: currency
+        )
+      end
+
+      # pocket_id -> nil and funding_category_id -> category in the same
+      # update!, so must_have_exactly_one_funding_source never sees zero
+      # sources in between. has_one :goal, dependent: :nullify below would
+      # make this a no-op on destroy anyway, but this doesn't rely on that
+      # callback's timing.
+      linked_goal&.update!(pocket_id: nil, funding_category_id: category.id)
+
+      destroy!
+    end
   end
 
   private

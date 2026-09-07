@@ -54,4 +54,52 @@ class PocketsControllerTest < ActionDispatch::IntegrationTest
 
     assert_equal 500, @pocket.reload.allocated_amount
   end
+
+  test "convert_to_envelope renders the dialog" do
+    get convert_to_envelope_account_pocket_path(@account, @pocket)
+    assert_response :success
+  end
+
+  test "create_envelope_conversion records an opening balance and removes the pocket" do
+    category = @family.categories.create!(name: "Vacations", color: "#6172F3")
+
+    post convert_to_envelope_account_pocket_path(@account, @pocket), params: { category_id: category.id }
+
+    assert_redirected_to account_path(@account, tab: :pockets)
+    assert_not Pocket.exists?(@pocket.id)
+    adjustment = BudgetAdjustment.find_by(category: category, kind: "opening_balance")
+    assert_not_nil adjustment
+    assert_equal 500, adjustment.amount
+  end
+
+  # Simulates the race must_have_exactly_one_funding_source can't catch: two
+  # concurrent conversions onto the same category both pass validation
+  # before either commits. Stubbed directly rather than constructed via real
+  # concurrency -- see the model-level DB test in pocket_test.rb for proof
+  # the unique index itself refuses the second row.
+  test "converting into a category already funding another goal re-renders the form instead of raising" do
+    # The race only bites when this pocket has a linked goal -- a bare
+    # pocket's conversion never touches Goal at all, so nothing collides
+    # with the unique funding_category_id index.
+    linked_goal = @pocket.build_goal(name: "Groceries goal", target_amount: 800, currency: @family.currency,
+                                      family: @family)
+    linked_goal.save!
+    category = @family.categories.create!(name: "Vacations", color: "#6172F3")
+    @family.goals.create!(name: "Existing envelope goal", target_amount: 500, currency: @family.currency,
+                           funding_category: category)
+
+    post convert_to_envelope_account_pocket_path(@account, @pocket), params: { category_id: category.id }
+
+    assert_response :unprocessable_entity
+    assert Pocket.exists?(@pocket.id), "the pocket must survive a rolled-back conversion"
+  end
+
+  test "a member without manage access cannot convert a pocket" do
+    sign_in users(:family_member)
+    category = @family.categories.create!(name: "Vacations", color: "#6172F3")
+
+    post convert_to_envelope_account_pocket_path(@account, @pocket), params: { category_id: category.id }
+
+    assert Pocket.exists?(@pocket.id)
+  end
 end

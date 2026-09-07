@@ -1,0 +1,28 @@
+<%# One-shot conversion: the pocket's current balance becomes an opening
+    balance on the chosen category's envelope, and the pocket goes away --
+    this replaces the reservation, it doesn't sit alongside a new one. No
+    model-backed form (there's no persisted record for "a conversion"), same
+    reasoning budget_categories/_move_reserve_dialog.html.erb uses. %>
+<%= render DS::Dialog.new do |dialog| %>
+  <% dialog.with_header(title: t(".title", name: @pocket.name)) %>
+  <% dialog.with_body do %>
+    <%= form_with url: convert_to_envelope_account_pocket_path(@account, @pocket), method: :post, class: "space-y-4" do %>
+      <p class="text-sm text-secondary">
+        <%= t(".explanation", amount: @pocket.allocated_amount_money.format(precision: 0)) %>
+      </p>
+
+      <div class="space-y-1">
+        <%= label_tag "category_id", t(".category_label"), class: "text-sm text-secondary" %>
+        <%= select_tag "category_id",
+                       options_from_collection_for_select(@selectable_categories, :id, :display_name),
+                       id: "category_id",
+                       class: "form-field__input w-full",
+                       required: true %>
+      </div>
+
+      <div class="flex gap-2 justify-end">
+        <%= render DS::Button.new(text: t(".submit"), type: "submit") %>
+      </div>
+    <% end %>
+  <% end %>
+<% end %>

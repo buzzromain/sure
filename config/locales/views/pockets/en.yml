@@ -35,6 +35,7 @@ en:
       no_auto_fill: "No auto-fill linked"
       view_transactions: "View tagged transactions"
       move_money: "Move money"
+      convert_to_envelope: "Convert to budget envelope"
       add_goal: "Add a goal"
       view_goal: "View goal"
       goal_progress: "Goal: %{amount} · %{status}"
@@ -70,6 +71,16 @@ en:
         non_positive: "Enter an amount greater than zero."
         exceeds_balance: "That is more than this pocket currently holds."
         exceeds_account_balance: "That would allocate more than this account actually has free."
+    convert_to_envelope:
+      title: "Convert to budget envelope · %{name}"
+      explanation: "Currently holding %{amount}. This will become the envelope's opening balance, and this pocket will be removed."
+      category_label: "Category"
+      submit: "Convert"
+      success: "Converted to a budget envelope on %{category}."
+      errors:
+        category_required: "Choose a category to convert into."
+        category_taken: "That category is already funding a different goal."
+        different_families: "That category doesn't belong to this family."
     create:
       success: "Pocket created."
     update:

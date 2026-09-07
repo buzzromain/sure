@@ -112,6 +112,14 @@
 
       <%= render DS::Link.new(
         variant: "ghost",
+        icon: "piggy-bank",
+        href: convert_to_envelope_account_pocket_path(account, pocket),
+        aria: { label: t("pockets.pocket.convert_to_envelope") },
+        frame: :modal
+      ) %>
+
+      <%= render DS::Link.new(
+        variant: "ghost",
         icon: "pencil",
         href: edit_account_pocket_path(account, pocket),
         frame: :modal

@@ -36,6 +36,7 @@ fr:
       of_balance: "sur %{balance}"
       view_transactions: "Voir les transactions étiquetées"
       move_money: "Déplacer de l'argent"
+      convert_to_envelope: "Convertir en enveloppe budget"
       add_goal: "Ajouter un objectif"
       view_goal: "Voir l'objectif"
       goal_progress: "Objectif : %{amount} · %{status}"
@@ -71,6 +72,16 @@ fr:
         non_positive: "Indiquez un montant supérieur à zéro."
         exceeds_balance: "C'est plus que ce que cette enveloppe contient actuellement."
         exceeds_account_balance: "Cela allouerait plus que ce que ce compte a réellement de libre."
+    convert_to_envelope:
+      title: "Convertir en enveloppe budget · %{name}"
+      explanation: "Contient actuellement %{amount}. Cela deviendra le solde d'ouverture de l'enveloppe budget, et cette enveloppe sera supprimée."
+      category_label: "Catégorie"
+      submit: "Convertir"
+      success: "Converti en enveloppe budget sur %{category}."
+      errors:
+        category_required: "Choisissez une catégorie vers laquelle convertir."
+        category_taken: "Cette catégorie finance déjà un autre objectif."
+        different_families: "Cette catégorie n'appartient pas à ce foyer."
     create:
       success: "Enveloppe créée."
     update:

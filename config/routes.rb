@@ -607,6 +607,8 @@ Rails.application.routes.draw do
       member do
         get :move
         post :move, action: :create_movement, as: nil
+        get :convert_to_envelope
+        post :convert_to_envelope, action: :create_envelope_conversion, as: nil
       end
     end
   end

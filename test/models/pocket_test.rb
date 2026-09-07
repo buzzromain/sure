@@ -39,4 +39,91 @@ class PocketTest < ActiveSupport::TestCase
     assert_equal 0, dylan_pocket.reload.allocated_amount,
       "a same-named tag in a different family must not fill this pocket"
   end
+
+  # --- convert_to_envelope! (Étape 6, Lot 3) ---
+
+  test "converting a bare pocket with a positive balance records an opening balance and destroys the pocket" do
+    family = families(:empty)
+    account = Account.create!(family: family, accountable: Depository.new, name: "Checking",
+                               currency: "USD", balance: 1_000)
+    category = family.categories.create!(name: "Vacations", color: "#6172F3")
+    pocket = account.pockets.create!(name: "Trip", allocated_amount: 300, currency: "USD")
+
+    pocket.convert_to_envelope!(category: category)
+
+    adjustment = BudgetAdjustment.find_by!(category: category, kind: "opening_balance")
+    assert_equal 300, adjustment.amount
+    assert_equal "USD", adjustment.currency
+    assert_not Pocket.exists?(name: "Trip")
+  end
+
+  test "converting a pocket at a zero balance records no opening balance but still destroys the pocket" do
+    family = families(:empty)
+    account = Account.create!(family: family, accountable: Depository.new, name: "Checking",
+                               currency: "USD", balance: 1_000)
+    category = family.categories.create!(name: "Vacations", color: "#6172F3")
+    pocket = account.pockets.create!(name: "Empty trip", allocated_amount: 0, currency: "USD")
+
+    assert_no_difference "BudgetAdjustment.count" do
+      pocket.convert_to_envelope!(category: category)
+    end
+
+    assert_not Pocket.exists?(name: "Empty trip")
+  end
+
+  test "converting a pocket with a linked goal re-points the goal at the category instead" do
+    family = families(:empty)
+    account = Account.create!(family: family, accountable: Depository.new, name: "Checking",
+                               currency: "USD", balance: 1_000)
+    category = family.categories.create!(name: "Vacations", color: "#6172F3")
+    pocket = account.pockets.create!(name: "Trip", allocated_amount: 300, currency: "USD")
+    goal = pocket.build_goal(name: "Trip goal", target_amount: 500, currency: "USD", family: family)
+    goal.save!
+
+    pocket.convert_to_envelope!(category: category)
+
+    reloaded_goal = Goal.find(goal.id)
+    assert_nil reloaded_goal.pocket_id
+    assert_equal category.id, reloaded_goal.funding_category_id
+
+    # current_balance for a funding_category-linked goal never bootstraps a
+    # Budget on its own (see GoalPocketCompositionTest) -- the current
+    # month's household budget has to exist and be initialized (RolloverCalculator
+    # only walks budgets with a non-nil budgeted_spending) before the adjustment
+    # materializes into adjustments_balance.
+    budget = Budget.find_or_bootstrap(family, start_date: Date.current)
+    budget.update!(budgeted_spending: 1_000, expected_income: 2_000)
+    Budget::RolloverCalculator.new(family: family, user: nil).recompute!
+    assert_equal 300, reloaded_goal.reload.current_balance
+  end
+
+  test "converting into a category that already funds another goal rolls back and leaves the pocket intact" do
+    family = families(:empty)
+    account = Account.create!(family: family, accountable: Depository.new, name: "Checking",
+                               currency: "USD", balance: 1_000)
+    category = family.categories.create!(name: "Vacations", color: "#6172F3")
+    family.goals.create!(name: "Existing envelope goal", target_amount: 500, currency: "USD",
+                          funding_category: category)
+    pocket = account.pockets.create!(name: "Trip", allocated_amount: 300, currency: "USD")
+    goal = pocket.build_goal(name: "Trip goal", target_amount: 500, currency: "USD", family: family)
+    goal.save!
+
+    assert_raises(ActiveRecord::RecordInvalid) { pocket.convert_to_envelope!(category: category) }
+
+    assert Pocket.exists?(name: "Trip"), "the whole conversion must roll back, not leave the pocket destroyed"
+    assert_equal 300, Pocket.find_by!(name: "Trip").allocated_amount
+    assert_equal 0, BudgetAdjustment.where(category: category, kind: "opening_balance").count
+  end
+
+  test "converting into a category from a different family is refused" do
+    family = families(:empty)
+    other_family = families(:dylan_family)
+    account = Account.create!(family: family, accountable: Depository.new, name: "Checking",
+                               currency: "USD", balance: 1_000)
+    other_category = other_family.categories.create!(name: "Not mine", color: "#6172F3")
+    pocket = account.pockets.create!(name: "Trip", allocated_amount: 300, currency: "USD")
+
+    error = assert_raises(Pocket::ConversionRefused) { pocket.convert_to_envelope!(category: other_category) }
+    assert_equal :different_families, error.reason
+  end
 end

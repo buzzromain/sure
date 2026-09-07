@@ -1,8 +1,10 @@
 class PocketsController < ApplicationController
   before_action :set_account
   before_action :require_depository_account
-  before_action :require_manage_account, only: %i[new create edit update destroy move create_movement]
-  before_action :set_pocket, only: %i[edit update destroy move create_movement]
+  before_action :require_manage_account, only: %i[new create edit update destroy move create_movement
+                                                    convert_to_envelope create_envelope_conversion]
+  before_action :set_pocket, only: %i[edit update destroy move create_movement
+                                       convert_to_envelope create_envelope_conversion]
 
   def index
     redirect_to account_path(@account, tab: :pockets)
@@ -76,6 +78,36 @@ class PocketsController < ApplicationController
     redirect_to account_path(@account, tab: :pockets), alert: t("pockets.move.errors.#{e.reason}")
   end
 
+  # Renders the dialog. The write lives in its own action below, same split
+  # move/create_movement above uses.
+  def convert_to_envelope
+    @selectable_categories = selectable_categories
+  end
+
+  def create_envelope_conversion
+    category = Current.family.categories.find(params[:category_id])
+    @pocket.convert_to_envelope!(category: category)
+    Budget::RolloverCalculator.new(family: Current.family, user: nil).recompute!
+
+    notice = t("pockets.convert_to_envelope.success", category: category.display_name)
+    respond_to do |format|
+      format.turbo_stream { render_pocket_streams(notice) }
+      format.html { redirect_to account_path(@account, tab: :pockets), notice: notice }
+    end
+  rescue ActiveRecord::RecordNotFound
+    redirect_to account_path(@account, tab: :pockets), alert: t("pockets.convert_to_envelope.errors.category_required")
+  # RecordNotUnique alongside RecordInvalid: same funding_category_id race
+  # BudgetCategoryGoalsController#create guards against -- two concurrent
+  # conversions (or a conversion racing a new envelope goal) onto the same
+  # category can both pass validation before either commits.
+  rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique
+    @selectable_categories = selectable_categories
+    flash.now[:alert] = t("pockets.convert_to_envelope.errors.category_taken")
+    render :convert_to_envelope, status: :unprocessable_entity
+  rescue Pocket::ConversionRefused => e
+    redirect_to account_path(@account, tab: :pockets), alert: t("pockets.convert_to_envelope.errors.#{e.reason}")
+  end
+
   private
 
     def render_pocket_streams(notice)
@@ -108,6 +140,15 @@ class PocketsController < ApplicationController
 
     def set_pocket
       @pocket = @account.pockets.find(params[:id])
+    end
+
+    # Mirrors BudgetCategoryGoalsController#selectable_categories exactly --
+    # no pre-filtering of categories already backing another envelope goal,
+    # the RecordInvalid/RecordNotUnique rescue above handles that race.
+    def selectable_categories
+      Current.family.categories.includes(:subcategories).roots.alphabetically.flat_map do |root|
+        [ root ] + root.subcategories.sort_by(&:name)
+      end
     end
 
     def pocket_params
