@@ -23,7 +23,16 @@ class BudgetCategoryGoalsController < ApplicationController
     end
 
     redirect_to goal_path(@goal), notice: t("budget_categories.goals.create.success")
-  rescue ActiveRecord::RecordInvalid
+  # RecordNotUnique alongside RecordInvalid: two concurrent "Add a goal"
+  # clicks on the same envelope can both pass the funding_category_id
+  # uniqueness validation before either commits -- the unique index is the
+  # actual backstop, and it raises a bare DB exception rather than
+  # populating @goal.errors on its own. Real here specifically: unlike the
+  # main goals#create form, this action's whole premise is "no goal is
+  # backing this envelope yet", offered right from the envelope a second
+  # tab has open at the same moment.
+  rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique => e
+    @goal.errors.add(:funding_category_id, :taken) if e.is_a?(ActiveRecord::RecordNotUnique)
     @selectable_categories = selectable_categories
     render :new, status: :unprocessable_entity
   end

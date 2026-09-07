@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_05_190000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_07_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -930,7 +930,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_05_190000) do
     t.datetime "updated_at", null: false
     t.index ["family_id", "state"], name: "index_goals_on_family_id_and_state"
     t.index ["family_id"], name: "index_goals_on_family_id"
-    t.index ["funding_category_id"], name: "index_goals_on_funding_category_id"
+    t.index ["funding_category_id"], name: "index_goals_on_funding_category_id", unique: true
     t.index ["pocket_id"], name: "index_goals_on_pocket_id"
     t.index ["tag_id"], name: "index_goals_on_tag_id"
     t.check_constraint "char_length(name::text) <= 255", name: "chk_savings_goals_name_length"

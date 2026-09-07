@@ -170,6 +170,20 @@ class GoalPocketCompositionTest < ActiveSupport::TestCase
       "a budget envelope isn't held in any one account, by design"
   end
 
+  # `validates :funding_category_id, uniqueness: true` only catches this at
+  # the Rails layer -- two concurrent requests can both pass it before either
+  # commits. Bypassing validation here is how the test forces the real
+  # backstop, the unique index, to be what actually refuses the second row.
+  test "the DB itself refuses two goals funded by the same category" do
+    family = families(:empty)
+    category = family.categories.create!(name: "Insurance", color: "#6172F3")
+    family.goals.create!(name: "First", target_amount: 1_200, currency: "USD", funding_category: category)
+
+    dupe = family.goals.new(name: "Second", target_amount: 500, currency: "USD", funding_category: category)
+
+    assert_raises(ActiveRecord::RecordNotUnique) { dupe.save!(validate: false) }
+  end
+
   test "combining a pocket and a funding_category on the same goal is refused" do
     account = Account.create!(family: @family, accountable: Depository.new, name: "Shared",
                                currency: "USD", balance: 1_000)

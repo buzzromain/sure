@@ -42,4 +42,25 @@ class BudgetCategoryGoalsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :unprocessable_entity
   end
+
+  # Simulates the race the uniqueness *validation* can't catch: two
+  # concurrent "Add a goal" submissions on the same envelope both pass Rails
+  # validation before either commits, so the second one's actual failure
+  # arrives as a bare RecordNotUnique from the unique index, not a populated
+  # @goal.errors. Stubbed directly rather than constructed via real
+  # concurrency -- see the model-level DB test for proof the constraint
+  # itself works; this proves the controller doesn't 500 when it fires.
+  test "a duplicate funding_category race re-renders the form instead of raising" do
+    Goal.any_instance.stubs(:save!).raises(
+      ActiveRecord::RecordNotUnique.new("duplicate key value violates unique constraint")
+    )
+
+    assert_no_difference "Goal.count" do
+      post budget_budget_category_goal_path(@budget, @budget_category), params: {
+        goal: { name: "Annual insurance", target_amount: "1200", kind: "one_off" }
+      }
+    end
+
+    assert_response :unprocessable_entity
+  end
 end
