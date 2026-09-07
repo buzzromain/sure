@@ -15,15 +15,28 @@ class PocketsController < ApplicationController
   def create
     @pocket = @account.pockets.new(pocket_params)
     @pocket.currency = @account.currency
+    target_amount = pocket_target_amount_param
 
-    if @pocket.save
-      respond_to do |format|
-        format.turbo_stream { render_pocket_streams(t("pockets.create.success")) }
-        format.html { redirect_to account_path(@account, tab: :pockets), notice: t("pockets.create.success") }
+    ActiveRecord::Base.transaction do
+      @pocket.save!
+
+      # No kind picker here on purpose -- kept to the simplest shape
+      # (one_off, no target_date). A maintained/months-of-expenses goal, or
+      # adding a target later, still goes through the full "Ajouter un
+      # objectif" flow (PocketGoalsController), unchanged.
+      if target_amount&.positive?
+        @goal = @pocket.build_goal(name: @pocket.name, target_amount: target_amount,
+                                    currency: @account.currency, family: Current.family, kind: "one_off")
+        @goal.save!
       end
-    else
-      render :new, status: :unprocessable_entity
     end
+
+    respond_to do |format|
+      format.turbo_stream { render_pocket_streams(t("pockets.create.success")) }
+      format.html { redirect_to account_path(@account, tab: :pockets), notice: t("pockets.create.success") }
+    end
+  rescue ActiveRecord::RecordInvalid
+    render :new, status: :unprocessable_entity
   end
 
   def edit
@@ -109,6 +122,13 @@ class PocketsController < ApplicationController
     def set_pocket
       @pocket = @account.pockets.find(params[:id])
     end
+
+    # Not a Pocket attribute -- read separately and never merged into
+    # pocket_params, so it can't be mass-assigned to Pocket by accident.
+    def pocket_target_amount_param
+      params.dig(:pocket, :target_amount).presence&.to_d
+    end
+
 
     def pocket_params
       permitted = params.require(:pocket).permit(:name, :description, :allocated_amount, :fill_direction,
