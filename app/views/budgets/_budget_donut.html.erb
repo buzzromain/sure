@@ -10,7 +10,9 @@
           <span><%= t(".spent") %></span>
         </div>
 
-        <div data-donut-chart-target="amount" class="mb-2 text-3xl font-medium privacy-sensitive whitespace-nowrap <%= budget.available_to_spend.negative? ? "text-destructive" : "text-primary" %>">
+        <div data-donut-chart-target="amount" class="mb-2 flex items-center gap-1.5 text-3xl font-medium privacy-sensitive whitespace-nowrap <%= budget.available_to_spend.negative? ? "text-destructive" : "text-primary" %>">
+          <%# Color alone signaled overspend here -- pair it with an icon. %>
+          <%= icon("triangle-alert", size: "xs", color: "destructive") if budget.available_to_spend.negative? %>
           <%= format_money(budget.actual_spending_money) %>
         </div>
 
@@ -50,7 +52,8 @@
             <p class="text-sm text-secondary"><%= bc.category.display_name %></p>
           </div>
 
-          <p data-donut-chart-target="amount" class="text-3xl font-medium privacy-sensitive whitespace-nowrap <%= bc.available_to_spend.negative? ? "text-destructive" : "text-primary" %>">
+          <p data-donut-chart-target="amount" class="flex items-center justify-center gap-1.5 text-3xl font-medium privacy-sensitive whitespace-nowrap <%= bc.available_to_spend.negative? ? "text-destructive" : "text-primary" %>">
+            <%= icon("triangle-alert", size: "xs", color: "destructive") if bc.available_to_spend.negative? %>
             <%= format_money(bc.actual_spending_money) %>
           </p>
 

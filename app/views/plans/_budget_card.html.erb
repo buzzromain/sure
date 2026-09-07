@@ -87,7 +87,13 @@
               <% bar_color = budget_category.over_budget? ? "bg-destructive" : (budget_category.near_limit? ? "bg-warning" : "bg-success") %>
               <div class="h-full <%= bar_color %> rounded-full" style="inline-size: <%= budget_category.bar_width_percent %>%"></div>
             </div>
-            <span class="shrink-0 text-xs tabular-nums text-primary privacy-sensitive">
+            <span class="shrink-0 flex items-center gap-1 text-xs tabular-nums text-primary privacy-sensitive">
+              <%# The mini-bar above is color-only -- this row (unlike the card-level
+                  pill near the top) has no other over-budget cue, so pair the color
+                  with an icon here too. %>
+              <% if budget_category.over_budget? %>
+                <%= icon("alert-circle", size: "xs", color: "destructive", aria: { label: t("reports.budget_performance.status.over") }) %>
+              <% end %>
               <%= format_money(budget_category.actual_spending_money) %><span class="text-subdued">/<%= format_money(budget_category.budgeted_spending_money) %></span>
             </span>
           </div>

@@ -1,11 +1,26 @@
 <%# locals: (budget_category:) %>
 
-<%= tag.div data: {
-  controller: "donut-chart",
-  donut_chart_segments_value: budget_category.to_donut_segments_json,
-  donut_chart_segment_height_value: 5,
-  donut_chart_segment_opacity_value: 0.2
-}, class: "relative h-full" do %>
+<%
+  donut_attrs = {
+    data: {
+      controller: "donut-chart",
+      donut_chart_segments_value: budget_category.to_donut_segments_json,
+      donut_chart_segment_height_value: 5,
+      donut_chart_segment_opacity_value: 0.2
+    },
+    class: "relative h-full"
+  }
+  # The overage wedge is color-coded (var(--color-destructive)) with no
+  # legend of its own -- aria-label/title give the deficit a non-color cue
+  # (the drawer's status row above already has one, but this donut is its
+  # own independently-hoverable graphic).
+  if budget_category.available_to_spend.negative?
+    over_label = "#{t("reports.budget_performance.over_by")}: #{format_money(budget_category.available_to_spend_money.abs)}"
+    donut_attrs[:aria] = { label: over_label }
+    donut_attrs[:title] = over_label
+  end
+%>
+<%= tag.div(**donut_attrs) do %>
   <div data-donut-chart-target="chartContainer" class="absolute inset-0 pointer-events-none"></div>
 
   <div data-donut-chart-target="contentContainer" class="flex justify-center items-center h-full p-1">
