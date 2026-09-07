@@ -1,0 +1,8 @@
+en:
+  activerecord:
+    errors:
+      models:
+        rule_allocation:
+          attributes:
+            base:
+              exactly_one_effect_required: "Must have exactly one effect (a pocket movement or a budget adjustment), not both or neither."

@@ -22,6 +22,12 @@ class Entry < ApplicationRecord
   # Read side only, so a transaction can say which bills it paid. The foreign key
   # already nullifies on delete, so this adds no lifecycle behaviour.
   has_many :recurring_allocations, dependent: nil, inverse_of: :entry
+  # Unlike recurring_allocations, this DOES have lifecycle behaviour on
+  # delete: RuleAllocation#after_destroy unwinds the PocketMovement/
+  # BudgetAdjustment it produced, so cascading here is what makes deleting
+  # this entry actually reverse a rule's earlier allocation rather than
+  # leaving it dangling.
+  has_many :rule_allocations, dependent: :destroy
 
   delegated_type :entryable, types: Entryable::TYPES, dependent: :destroy
   accepts_nested_attributes_for :entryable
@@ -45,6 +51,20 @@ class Entry < ApplicationRecord
   # correction, not a budget-relevant spend, and has no category at all.
   after_commit :schedule_budget_rollover_recompute,
     if: -> { transaction? && (destroyed? || saved_change_to_amount? || saved_change_to_date? || saved_change_to_excluded?) }
+  # A correction (not a deletion -- that's already handled by
+  # dependent: :destroy above, and not a creation -- previously_new_record?
+  # excludes it, there's nothing to reverse yet) invalidates whatever a rule
+  # already allocated from this entry's old amount/date/excluded state.
+  # Rather than trying to recompute the allocation in place, destroy it
+  # outright: the next rule application (already triggered by the normal
+  # sync/apply flow) picks the corrected entry back up and reallocates
+  # fresh. previously_new_record? matters beyond just skipping needless work
+  # on create: touching the (empty, on create) rule_allocations association
+  # here would load and cache it as empty on this Ruby object, which
+  # dependent: :destroy would then trust instead of re-querying if this same
+  # object is destroyed later in the same request.
+  after_commit :reverse_rule_allocations,
+    if: -> { transaction? && !destroyed? && !previously_new_record? && (saved_change_to_amount? || saved_change_to_date? || saved_change_to_excluded?) }
 
   scope :visible, -> {
     joins(:account).where(accounts: { status: [ "draft", "active" ] })
@@ -602,5 +622,9 @@ class Entry < ApplicationRecord
       return unless account
 
       RecomputeBudgetRolloverJob.schedule_for_account(account)
+    end
+
+    def reverse_rule_allocations
+      rule_allocations.destroy_all
     end
 end

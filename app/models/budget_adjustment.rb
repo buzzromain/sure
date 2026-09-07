@@ -17,7 +17,8 @@ class BudgetAdjustment < ApplicationRecord
   belongs_to :user, optional: true
   belongs_to :category
 
-  enum :kind, { opening_balance: "opening_balance", reallocation: "reallocation" }, default: :opening_balance
+  enum :kind, { opening_balance: "opening_balance", reallocation: "reallocation", rule_contribution: "rule_contribution" },
+    default: :opening_balance
 
   monetize :amount
 
@@ -25,7 +26,7 @@ class BudgetAdjustment < ApplicationRecord
   validates :currency, presence: true
   validates :effective_on, presence: true
   validates :group_id, presence: true, if: :reallocation?
-  validates :group_id, absence: true, if: :opening_balance?
+  validates :group_id, absence: true, unless: :reallocation?
   validate :category_belongs_to_family
 
   class InvalidReallocation < StandardError
@@ -46,6 +47,18 @@ class BudgetAdjustment < ApplicationRecord
     def record_opening_balance!(category:, amount:, family:, currency:, user: nil, effective_on: Date.current, note: nil)
       create!(family: family, user: user, category: category, kind: :opening_balance,
               amount: amount.to_d, currency: currency, effective_on: effective_on, note: note)
+    end
+
+    # A rule-triggered credit (fixed/percent/round-up on a matching
+    # transaction) -- kept distinct from opening_balance so a targeted future
+    # undo (e.g. "reverse only what this rule ever contributed") can find its
+    # own rows without touching genuine one-time backfills. Household chain
+    # only (user: nil): a Rule has no per-user concept, matching how a
+    # funding_category-linked Goal already only ever reads the household
+    # chain (see Goal#current_funding_budget_category).
+    def record_rule_contribution!(category:, amount:, family:, currency:, effective_on: Date.current)
+      create!(family: family, user: nil, category: category, kind: :rule_contribution,
+              amount: amount.to_d, currency: currency, effective_on: effective_on)
     end
 
     # Moves `amount` of ACCUMULATED RESERVE from one envelope to another --

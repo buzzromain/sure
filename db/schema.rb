@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_07_090000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_07_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -378,7 +378,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_07_090000) do
     t.index ["group_id"], name: "index_budget_adjustments_on_group_id"
     t.index ["user_id"], name: "index_budget_adjustments_on_user_id"
     t.check_constraint "amount <> 0::numeric", name: "chk_budget_adjustments_amount_not_zero"
-    t.check_constraint "kind::text = ANY (ARRAY['opening_balance'::character varying, 'reallocation'::character varying]::text[])", name: "chk_budget_adjustments_kind_enum"
+    t.check_constraint "kind::text = ANY (ARRAY['opening_balance'::character varying, 'reallocation'::character varying, 'rule_contribution'::character varying]::text[])", name: "chk_budget_adjustments_kind_enum"
   end
 
   create_table "budget_categories", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -1987,6 +1987,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_07_090000) do
     t.index ["rule_id"], name: "index_rule_actions_on_rule_id"
   end
 
+  create_table "rule_allocations", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.decimal "amount", precision: 19, scale: 4, null: false
+    t.uuid "budget_adjustment_id"
+    t.datetime "created_at", null: false
+    t.string "currency", null: false
+    t.uuid "entry_id"
+    t.uuid "pocket_movement_id"
+    t.uuid "rule_action_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["budget_adjustment_id"], name: "index_rule_allocations_on_budget_adjustment_id"
+    t.index ["entry_id"], name: "index_rule_allocations_on_entry_id"
+    t.index ["pocket_movement_id"], name: "index_rule_allocations_on_pocket_movement_id"
+    t.index ["rule_action_id", "entry_id"], name: "idx_rule_allocations_entry_once", unique: true, where: "(entry_id IS NOT NULL)"
+    t.index ["rule_action_id"], name: "index_rule_allocations_on_rule_action_id"
+    t.check_constraint "amount <> 0::numeric", name: "chk_rule_allocations_amount_not_zero"
+    t.check_constraint "pocket_movement_id IS NOT NULL AND budget_adjustment_id IS NULL OR pocket_movement_id IS NULL AND budget_adjustment_id IS NOT NULL", name: "chk_rule_allocations_exactly_one_effect"
+  end
+
   create_table "rule_conditions", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.string "condition_type", null: false
     t.datetime "created_at", null: false
@@ -2746,6 +2764,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_07_090000) do
   add_foreign_key "rejected_transfers", "transactions", column: "inflow_transaction_id", on_delete: :cascade
   add_foreign_key "rejected_transfers", "transactions", column: "outflow_transaction_id", on_delete: :cascade
   add_foreign_key "rule_actions", "rules"
+  add_foreign_key "rule_allocations", "budget_adjustments"
+  add_foreign_key "rule_allocations", "entries", on_delete: :nullify
+  add_foreign_key "rule_allocations", "pocket_movements"
+  add_foreign_key "rule_allocations", "rule_actions"
   add_foreign_key "rule_conditions", "rule_conditions", column: "parent_id"
   add_foreign_key "rule_conditions", "rules"
   add_foreign_key "rule_runs", "rules"

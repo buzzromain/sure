@@ -1,0 +1,8 @@
+fr:
+  activerecord:
+    errors:
+      models:
+        rule_allocation:
+          attributes:
+            base:
+              exactly_one_effect_required: "Doit avoir exactement un effet (un mouvement d'enveloppe ou un ajustement budgétaire), pas les deux ni aucun."

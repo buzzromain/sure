@@ -32,4 +32,47 @@ class EntryTest < ActiveSupport::TestCase
 
     assert_not_nil category.reload.last_used_at
   end
+
+  # --- Étape 8: reversing a rule-triggered allocation when its entry changes ---
+
+  test "destroying an entry reverses any rule allocation it triggered" do
+    family = families(:empty)
+    account = family.accounts.create!(name: "Checking", balance: 1_000, currency: "USD", accountable: Depository.new)
+    pocket = account.pockets.create!(name: "Savings", currency: "USD")
+    rule = Rule.create!(family: family, resource_type: "transaction",
+                         conditions: [ Rule::Condition.new(condition_type: "transaction_name", operator: "=", value: "Paycheck") ],
+                         actions: [ Rule::Action.new(action_type: "allocate_to_reserve",
+                                                      value: { target_type: "pocket", target_id: pocket.id, amount_mode: "fixed", amount_value: "50" }.to_json) ])
+    entry = create_transaction(account: account, name: "Paycheck", amount: -1000)
+    rule.apply
+    assert_equal 50, pocket.reload.allocated_amount
+
+    entry.destroy!
+
+    assert_equal 0, pocket.reload.allocated_amount
+    assert_equal 0, RuleAllocation.count
+  end
+
+  test "correcting an entry's amount reverses its rule allocation without destroying the entry" do
+    family = families(:empty)
+    account = family.accounts.create!(name: "Checking", balance: 1_000, currency: "USD", accountable: Depository.new)
+    pocket = account.pockets.create!(name: "Savings", currency: "USD")
+    rule = Rule.create!(family: family, resource_type: "transaction",
+                         conditions: [ Rule::Condition.new(condition_type: "transaction_name", operator: "=", value: "Paycheck") ],
+                         actions: [ Rule::Action.new(action_type: "allocate_to_reserve",
+                                                      value: { target_type: "pocket", target_id: pocket.id, amount_mode: "fixed", amount_value: "50" }.to_json) ])
+    entry = create_transaction(account: account, name: "Paycheck", amount: -1000)
+    rule.apply
+    assert_equal 50, pocket.reload.allocated_amount
+
+    entry.update!(amount: -2000)
+
+    assert entry.persisted?
+    assert_equal 0, pocket.reload.allocated_amount
+    assert_equal 0, RuleAllocation.count
+
+    # The next application picks the corrected entry back up.
+    rule.apply
+    assert_equal 50, pocket.reload.allocated_amount
+  end
 end
