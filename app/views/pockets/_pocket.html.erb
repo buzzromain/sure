@@ -65,7 +65,7 @@
       <p class="text-xs text-secondary truncate">
         <%= t("pockets.pocket.goal_progress",
               amount: format_money(goal.target_amount_money),
-              status: t("pockets.pocket.goal_status.#{goal.status}", default: goal.status.to_s.humanize)) %>
+              status: t("goals.status.#{goal.status}", default: goal.status.to_s.humanize)) %>
       </p>
       <%= render DS::Link.new(variant: "ghost", text: t("pockets.pocket.view_goal"), href: goal_path(goal), frame: :_top) %>
     </div>

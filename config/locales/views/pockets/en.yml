@@ -40,13 +40,6 @@ en:
       view_goal: "View goal"
       goal_progress: "Goal: %{amount} · %{status}"
       goal_hint: "This goal reads its balance from this pocket — no funding accounts to pick."
-      goal_status:
-        reached: "reached"
-        on_track: "on track"
-        behind: "behind"
-        no_target_date: "open"
-        funded: "funded"
-        depleted: "depleted"
       fill_direction:
         inflows: "Deposits only"
         outflows: "Expenses only"

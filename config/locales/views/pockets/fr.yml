@@ -3,11 +3,11 @@ fr:
   pockets:
     index:
       new: "Nouvelle enveloppe"
-      total_allocated: "Alloué"
-      free_balance: "Solde libre"
-      free_label: "Libre"
-      empty: "Aucune enveloppe. Créez-en une pour commencer à allouer des fonds."
-      overflow_warning: "Les enveloppes allouées dépassent le solde actuel du compte."
+      total_allocated: "Réservé sur ce compte"
+      free_balance: "Solde non réservé"
+      free_label: "Non réservé"
+      empty: "Aucune enveloppe. Créez-en une pour commencer à réserver des fonds."
+      overflow_warning: "Les enveloppes réservées dépassent le solde actuel du compte."
     new:
       title: "Nouvelle enveloppe"
     edit:
@@ -17,7 +17,7 @@ fr:
       name_placeholder: "ex. Épargne de précaution"
       description: "Description"
       description_placeholder: "ex. 3 mois de dépenses"
-      allocated_amount: "Montant alloué"
+      allocated_amount: "Montant attribué"
       auto_fill_tag: "Remplissage automatique par étiquette"
       no_tag: "Aucune (manuel uniquement)"
       fill_direction_label: "Compter les transactions"
@@ -26,7 +26,7 @@ fr:
         outflows: "Dépenses uniquement (argent sortant)"
         both: "Toutes les transactions étiquetées"
       auto_fill_hint: "Les transactions avec cette étiquette mettront automatiquement à jour cette enveloppe."
-      free_balance_hint: "Disponible à allouer : %{amount}"
+      free_balance_hint: "Disponible à attribuer : %{amount}"
       save: "Enregistrer"
     pocket:
       overflow_badge: "DÉPASSEMENT"
@@ -36,18 +36,11 @@ fr:
       of_balance: "sur %{balance}"
       view_transactions: "Voir les transactions étiquetées"
       move_money: "Déplacer de l'argent"
-      convert_to_envelope: "Convertir en enveloppe budget"
+      convert_to_envelope: "Convertir en enveloppe budgétaire"
       add_goal: "Ajouter un objectif"
       view_goal: "Voir l'objectif"
       goal_progress: "Objectif : %{amount} · %{status}"
       goal_hint: "Cet objectif lit son solde depuis cette enveloppe — pas de compte de financement à choisir."
-      goal_status:
-        reached: "atteint"
-        on_track: "en bonne voie"
-        behind: "en retard"
-        no_target_date: "ouvert"
-        funded: "financé"
-        depleted: "épuisé"
       fill_direction:
         inflows: "Dépôts uniquement"
         outflows: "Dépenses uniquement"
@@ -71,13 +64,13 @@ fr:
       errors:
         non_positive: "Indiquez un montant supérieur à zéro."
         exceeds_balance: "C'est plus que ce que cette enveloppe contient actuellement."
-        exceeds_account_balance: "Cela allouerait plus que ce que ce compte a réellement de libre."
+        exceeds_account_balance: "Cela attribuerait plus que le solde non réservé de ce compte."
     convert_to_envelope:
-      title: "Convertir en enveloppe budget · %{name}"
-      explanation: "Contient actuellement %{amount}. Cela deviendra le solde d'ouverture de l'enveloppe budget, et cette enveloppe sera supprimée."
+      title: "Convertir en enveloppe budgétaire · %{name}"
+      explanation: "Contient actuellement %{amount}. Cela deviendra le solde d'ouverture de l'enveloppe budgétaire, et cette enveloppe sera supprimée."
       category_label: "Catégorie"
       submit: "Convertir"
-      success: "Converti en enveloppe budget sur %{category}."
+      success: "Converti en enveloppe budgétaire sur %{category}."
       errors:
         category_required: "Choisissez une catégorie vers laquelle convertir."
         category_taken: "Cette catégorie finance déjà un autre objectif."

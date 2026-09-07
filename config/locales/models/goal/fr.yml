@@ -17,8 +17,8 @@ fr:
           attributes:
             base:
               at_least_one_linked_account_required: Sélectionnez au moins un compte pour financer cet objectif.
-              funding_source_must_be_exclusive: Un objectif ne peut être financé que par une seule source à la fois — une enveloppe, un pocket ou des comptes liés, pas plusieurs.
-              whole_account_conflict_on_restore: "Impossible de restaurer cet objectif : « %{account_name} » est désormais entièrement affecté à « %{goal_name} ». Indiquez d'abord un montant sur l'un des deux."
+              funding_source_must_be_exclusive: Un objectif ne peut être financé que par une seule source à la fois — une enveloppe, une enveloppe budgétaire ou des comptes liés, pas plusieurs.
+              whole_account_conflict_on_restore: "Impossible de restaurer cet objectif : « %{account_name} » est désormais entièrement attribué à « %{goal_name} ». Indiquez d'abord un montant sur l'un des deux."
             kind:
               locked_while_released: Rouvrez cet objectif avant d'en faire une réserve.
               locked_once_consumed: Cet objectif a déjà enregistré des dépenses, il ne peut pas devenir une réserve.
