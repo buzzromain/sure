@@ -52,6 +52,22 @@ en:
       confirm_changes: Confirm changes
     actions:
       value_placeholder: Enter a value
+      allocate_to_reserve:
+        round_up_display: "round up to %{amount}"
+        target_type_label: Where
+        target_type:
+          pocket: A pocket on an account
+          budget_category: A budget envelope
+        target_id_label: Which one
+        target_id_placeholder: Choose one
+        amount_mode_label: How much
+        amount_mode:
+          fixed: Fixed amount
+          percent: Percentage
+          round_up: Round up to
+        amount_value_label_fixed: Amount
+        amount_value_label_percent: Percent
+        amount_value_label_round_up: Round up to the nearest
     update:
       success: Rule updated
     destroy:

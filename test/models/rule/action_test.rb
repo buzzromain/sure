@@ -220,6 +220,18 @@ class Rule::ActionTest < ActiveSupport::TestCase
     assert_equal category, transfer.outflow_transaction.category
   end
 
+  test "value_display delegates to the executor, unchanged for a plain [label, id] options type" do
+    action = Rule::Action.new(rule: @transaction_rule, action_type: "set_transaction_category", value: @grocery_category.id)
+
+    assert_equal @grocery_category.name, action.value_display
+  end
+
+  test "value_display returns a blank string when there is no value" do
+    action = Rule::Action.new(rule: @transaction_rule, action_type: "set_transaction_category", value: nil)
+
+    assert_equal "", action.value_display
+  end
+
   test "set_investment_activity_label ignores invalid values" do
     action = Rule::Action.new(
       rule: @transaction_rule,

@@ -1,5 +1,5 @@
 class Rule::ActionExecutor
-  TYPES = [ "select", "function", "text" ]
+  TYPES = [ "select", "function", "text", "allocate_to_reserve" ]
 
   def initialize(rule)
     @rule = rule
@@ -23,6 +23,18 @@ class Rule::ActionExecutor
 
   def execute(scope, value: nil, ignore_attribute_locks: false, rule_run: nil)
     raise NotImplementedError, "Action executor #{self.class.name} must implement #execute"
+  end
+
+  # Default: assumes options is a flat [label, value] pair list, same
+  # behavior Rule::Action#value_display always had before this became
+  # overridable. An executor whose options/value don't fit that shape (e.g.
+  # AllocateToReserve, whose value is a JSON blob and whose options is two
+  # separate lists) overrides this instead of forcing its shape through here.
+  def value_display(value)
+    return "" if value.blank?
+    return "" unless options
+
+    options.find { |option| option.last == value }&.first || ""
   end
 
   def as_json

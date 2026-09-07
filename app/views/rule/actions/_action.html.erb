@@ -2,6 +2,7 @@
 
 <% action = form.object %>
 <% rule = action.rule %>
+<% allocate_to_reserve_executor = rule.action_executors.find { |executor| executor.key == "allocate_to_reserve" } %>
 
 <li data-controller="rule--actions" data-rule--actions-action-executors-value="<%= rule.action_executors.to_json %>" class="flex items-center gap-3">
   <%= form.hidden_field :_destroy, value: false, data: { rule__actions_target: "destroyField" } %>
@@ -15,11 +16,15 @@
                 data: { rule__actions_target: "actionValue" } do %>
       <%# Initial rendering based on the action executor type. %>
       <%# Subsequent renders are injected by the Stimulus controller, which uses the templates from below. %>
-      <span class="font-medium text-primary uppercase text-xs">to</span>
-      <% if action.executor.type == "select" %>
-        <%= form.select :value, action.options || [], {} %>
-      <% elsif action.executor.type == "text" %>
-        <%= form.text_field :value, placeholder: t("rules.actions.value_placeholder") %>
+      <% if action.executor.type == "allocate_to_reserve" %>
+        <%= render "rule/actions/allocate_to_reserve_fields", form: form, action: action, executor: allocate_to_reserve_executor %>
+      <% else %>
+        <span class="font-medium text-primary uppercase text-xs">to</span>
+        <% if action.executor.type == "select" %>
+          <%= form.select :value, action.options || [], {} %>
+        <% elsif action.executor.type == "text" %>
+          <%= form.text_field :value, placeholder: t("rules.actions.value_placeholder") %>
+        <% end %>
       <% end %>
     <% end %>
   </div>
@@ -39,6 +44,14 @@
   <template data-rule--actions-target="textTemplate">
     <span class="font-medium text-primary uppercase text-xs">to</span>
     <%= form.text_field :value, placeholder: t("rules.actions.value_placeholder") %>
+  </template>
+
+  <template data-rule--actions-target="allocateToReserveTemplate">
+    <%# Reuses the same partial as the initial render above -- action.value
+        parses to {} here regardless of what type this row is switching
+        FROM (a category id isn't valid JSON either), so this always starts
+        from the same blank defaults a brand-new action would. %>
+    <%= render "rule/actions/allocate_to_reserve_fields", form: form, action: action, executor: allocate_to_reserve_executor %>
   </template>
 
   <%# The function type doesn't need an input, so no template is required.%>

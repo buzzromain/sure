@@ -15,6 +15,48 @@ class Rule::ActionExecutor::AllocateToReserve < Rule::ActionExecutor
   AMOUNT_MODES = %w[fixed percent round_up].freeze
   TARGET_TYPES = %w[pocket budget_category].freeze
 
+  def type
+    "allocate_to_reserve"
+  end
+
+  # Two separate lists, not one flat [label, id] array like every other
+  # executor's options -- the target picker in the rule builder needs both,
+  # switching between them client-side as target_type changes. Same
+  # Category::Group.select_options SetTransactionCategory already uses for
+  # its own category picker (parent/subcategory grouping, indent: false
+  # since this also feeds value_display's plain-text summary).
+  def options
+    {
+      pockets: family.pockets.joins(:account).order("accounts.name, pockets.name").pluck(:name, :id),
+      budget_categories: Category::Group.select_options(family.categories, indent: false)
+    }
+  end
+
+  # value is a JSON blob here, not a plain id -- the base class's
+  # options.find lookup doesn't apply, so this replaces it entirely rather
+  # than extending it.
+  def value_display(value)
+    config = parse_config(value)
+    return "" unless config
+
+    target = resolve_target(config)
+    return "" unless target
+
+    amount_value = config["amount_value"].to_d
+
+    amount_label = case config["amount_mode"]
+    when "fixed"
+      Money.new(amount_value, family.currency).format
+    when "percent"
+      "#{config["amount_value"]}%"
+    when "round_up"
+      I18n.t("rules.actions.allocate_to_reserve.round_up_display",
+             amount: Money.new(amount_value, family.currency).format)
+    end
+
+    "#{amount_label} → #{target.name}"
+  end
+
   def execute(transaction_scope, value: nil, ignore_attribute_locks: false, rule_run: nil)
     config = parse_config(value)
     return 0 unless config

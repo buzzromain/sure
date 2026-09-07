@@ -105,4 +105,42 @@ class Rule::ActionExecutor::AllocateToReserveTest < ActiveSupport::TestCase
 
     assert_equal 0, RuleAllocation.count
   end
+
+  test "options lists the family's pockets and grouped categories, not a flat pair list" do
+    other_pocket = @account.pockets.create!(name: "Emergency", currency: "USD")
+    category = @family.categories.create!(name: "Vacations", color: "#6172F3")
+    rule = build_rule(target_type: "pocket", target_id: @pocket.id, amount_mode: "fixed", amount_value: "50")
+    executor = rule.actions.first.executor
+
+    options = executor.options
+
+    assert_kind_of Hash, options
+    pocket_ids = options[:pockets].map(&:last)
+    assert_includes pocket_ids, @pocket.id
+    assert_includes pocket_ids, other_pocket.id
+    category_ids = options[:budget_categories].map(&:last)
+    assert_includes category_ids, category.id
+  end
+
+  test "value_display renders a readable summary for each amount mode and target type" do
+    rule = build_rule(target_type: "pocket", target_id: @pocket.id, amount_mode: "fixed", amount_value: "50")
+    assert_equal "$50.00 → Savings", rule.actions.first.value_display
+
+    category = @family.categories.create!(name: "Vacations", color: "#6172F3")
+    percent_rule = build_rule(target_type: "budget_category", target_id: category.id, amount_mode: "percent", amount_value: "10")
+    assert_equal "10% → Vacations", percent_rule.actions.first.value_display
+
+    round_up_rule = build_rule(target_type: "pocket", target_id: @pocket.id, amount_mode: "round_up", amount_value: "5")
+    assert_equal "round up to $5.00 → Savings", round_up_rule.actions.first.value_display
+  end
+
+  test "value_display returns a blank string, never an exception, for invalid or missing data" do
+    invalid_json = Rule.create!(family: @family, resource_type: "transaction",
+                                 conditions: [ Rule::Condition.new(condition_type: "transaction_name", operator: "=", value: "Paycheck") ],
+                                 actions: [ Rule::Action.new(action_type: "allocate_to_reserve", value: "not json") ])
+    assert_equal "", invalid_json.actions.first.value_display
+
+    deleted_target = build_rule(target_type: "pocket", target_id: SecureRandom.uuid, amount_mode: "fixed", amount_value: "50")
+    assert_equal "", deleted_target.actions.first.value_display
+  end
 end

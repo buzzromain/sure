@@ -29,15 +29,7 @@ class Rule::Action < ApplicationRecord
   end
 
   def value_display
-    if value.present?
-      if options
-        options.find { |option| option.last == value }&.first
-      else
-        ""
-      end
-    else
-      ""
-    end
+    executor.value_display(value)
   end
 
   def executor

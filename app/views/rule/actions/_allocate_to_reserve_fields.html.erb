@@ -1,0 +1,41 @@
+<%# locals: (form:, action:, executor:) %>
+
+<%# Rendered both for the row's initial state (action already this type) and
+    inside the Stimulus template used when switching TO this type -- config
+    parses to {} if action.value belongs to a different action_type (e.g. a
+    category id, not JSON), which naturally yields the same defaults as a
+    brand-new action. %>
+<% config = JSON.parse(action.value.presence || "{}") rescue {} %>
+<% target_type = Rule::ActionExecutor::AllocateToReserve::TARGET_TYPES.include?(config["target_type"]) ? config["target_type"] : "pocket" %>
+<% amount_mode = Rule::ActionExecutor::AllocateToReserve::AMOUNT_MODES.include?(config["amount_mode"]) ? config["amount_mode"] : "fixed" %>
+<% target_options = target_type == "budget_category" ? executor.options[:budget_categories] : executor.options[:pockets] %>
+
+<div class="flex flex-wrap items-center gap-2" data-rule--actions-target="allocateToReserveFields">
+  <%= form.hidden_field :value, data: { rule__actions_target: "allocateToReserveValue" } %>
+
+  <span class="font-medium text-primary uppercase text-xs"><%= t("rules.actions.allocate_to_reserve.target_type_label") %></span>
+  <%= select_tag "_allocate_to_reserve_target_type",
+        options_for_select(Rule::ActionExecutor::AllocateToReserve::TARGET_TYPES.map { |value|
+          [ t("rules.actions.allocate_to_reserve.target_type.#{value}"), value ]
+        }, target_type),
+        class: "form-field__input",
+        data: { rule__actions_target: "allocateToReserveTargetType", action: "change->rule--actions#syncAllocateToReserveValue" } %>
+
+  <%= select_tag "_allocate_to_reserve_target_id",
+        options_for_select(target_options, config["target_id"]),
+        prompt: t("rules.actions.allocate_to_reserve.target_id_placeholder"),
+        class: "form-field__input",
+        data: { rule__actions_target: "allocateToReserveTargetId", action: "change->rule--actions#syncAllocateToReserveValue" } %>
+
+  <span class="font-medium text-primary uppercase text-xs"><%= t("rules.actions.allocate_to_reserve.amount_mode_label") %></span>
+  <%= select_tag "_allocate_to_reserve_amount_mode",
+        options_for_select(Rule::ActionExecutor::AllocateToReserve::AMOUNT_MODES.map { |value|
+          [ t("rules.actions.allocate_to_reserve.amount_mode.#{value}"), value ]
+        }, amount_mode),
+        class: "form-field__input",
+        data: { rule__actions_target: "allocateToReserveAmountMode", action: "change->rule--actions#syncAllocateToReserveValue" } %>
+
+  <%= number_field_tag "_allocate_to_reserve_amount_value", config["amount_value"],
+        min: 0, step: "any", autocomplete: "off", class: "form-field__input w-24",
+        data: { rule__actions_target: "allocateToReserveAmountValue", action: "input->rule--actions#syncAllocateToReserveValue" } %>
+</div>

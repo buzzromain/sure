@@ -32,6 +32,21 @@ class RulesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
+  test "should get edit for a rule with an allocate_to_reserve action" do
+    account = @user.family.accounts.create!(name: "Checking", balance: 1_000, currency: "USD", accountable: Depository.new)
+    pocket = account.pockets.create!(name: "Savings", currency: "USD")
+    rule = Rule.create!(
+      family: @user.family, resource_type: "transaction",
+      conditions: [ Rule::Condition.new(condition_type: "transaction_name", operator: "=", value: "Paycheck") ],
+      actions: [ Rule::Action.new(action_type: "allocate_to_reserve",
+                                   value: { target_type: "pocket", target_id: pocket.id, amount_mode: "fixed", amount_value: "50" }.to_json) ]
+    )
+
+    get edit_rule_url(rule)
+
+    assert_response :success
+  end
+
   # "Set all transactions with a name like 'starbucks' and an amount between 20 and 40 to the 'food and drink' category"
   test "creates rule with nested conditions" do
     post rules_url, params: {
@@ -89,6 +104,36 @@ class RulesControllerTest < ActionDispatch::IntegrationTest
     assert_equal categories(:food_and_drink).id, rule.actions.first.value
 
     assert_redirected_to confirm_rule_url(rule, reload_on_close: true)
+  end
+
+  # Simulates what the rule--actions Stimulus controller produces client-side
+  # (JSON.stringify of the four sub-fields into the hidden value input) --
+  # rule_params permits :value as a plain string, same as every other
+  # action_type, so no controller/param changes were needed for this one.
+  test "creates rule with an allocate_to_reserve action from a pre-built JSON value" do
+    account = @user.family.accounts.create!(name: "Checking", balance: 1_000, currency: "USD", accountable: Depository.new)
+    pocket = account.pockets.create!(name: "Savings", currency: "USD")
+
+    post rules_url, params: {
+      rule: {
+        resource_type: "transaction",
+        conditions_attributes: {
+          "0" => { condition_type: "transaction_name", operator: "=", value: "Paycheck" }
+        },
+        actions_attributes: {
+          "0" => {
+            action_type: "allocate_to_reserve",
+            value: { target_type: "pocket", target_id: pocket.id, amount_mode: "percent", amount_value: "10" }.to_json
+          }
+        }
+      }
+    }
+
+    rule = @user.family.rules.order("created_at DESC").first
+    assert_equal "allocate_to_reserve", rule.actions.first.action_type
+    stored_config = JSON.parse(rule.actions.first.value)
+    assert_equal pocket.id, stored_config["target_id"]
+    assert_equal "percent", stored_config["amount_mode"]
   end
 
   test "can update rule" do

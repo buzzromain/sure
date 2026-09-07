@@ -7,13 +7,19 @@ export default class extends Controller {
     "destroyField",
     "actionValue",
     "selectTemplate",
-    "textTemplate"
+    "textTemplate",
+    "allocateToReserveTemplate",
+    "allocateToReserveTargetType",
+    "allocateToReserveTargetId",
+    "allocateToReserveAmountMode",
+    "allocateToReserveAmountValue",
+    "allocateToReserveValue",
   ];
 
   remove(e) {
     e.preventDefault();
     e.stopPropagation();
-    
+
     if (e.params.destroy) {
       this.destroyFieldTarget.value = true;
       this.element.classList.add("hidden");
@@ -34,10 +40,28 @@ export default class extends Controller {
       this.#buildSelectFor(actionExecutor);
     } else if (actionExecutor.type === "text") {
       this.#buildTextInputFor();
+    } else if (actionExecutor.type === "allocate_to_reserve") {
+      this.#buildAllocateToReserveFor();
     } else {
       // Hide for any type that doesn't need a value (e.g. function)
       this.#hideActionValue();
     }
+  }
+
+  // Bound via data-action on each of the four allocate_to_reserve sub-fields
+  // (none of them submit directly -- their combined state is what actually
+  // gets submitted, in the hidden allocateToReserveValue field).
+  syncAllocateToReserveValue(e) {
+    if (e && e.target === this.allocateToReserveTargetTypeTarget) {
+      this.#refreshAllocateToReserveTargetOptions();
+    }
+
+    this.allocateToReserveValueTarget.value = JSON.stringify({
+      target_type: this.allocateToReserveTargetTypeTarget.value,
+      target_id: this.allocateToReserveTargetIdTarget.value,
+      amount_mode: this.allocateToReserveAmountModeTarget.value,
+      amount_value: this.allocateToReserveAmountValueTarget.value,
+    });
   }
 
   #hideActionValue() {
@@ -89,5 +113,40 @@ export default class extends Controller {
     // Add the template content to the actionValue target and ensure it's visible
     this.actionValueTarget.appendChild(template);
     this.actionValueTarget.classList.remove("hidden");
+  }
+
+  #buildAllocateToReserveFor() {
+    // Unlike selectTemplate/textTemplate, this one is already fully
+    // populated server-side (both target_type and its matching target_id
+    // options) -- one action_type, one dedicated template, no need to build
+    // options here the way the generic select template does.
+    const template =
+      this.allocateToReserveTemplateTarget.content.cloneNode(true);
+
+    this.actionValueTarget.appendChild(template);
+    this.actionValueTarget.classList.remove("hidden");
+    this.syncAllocateToReserveValue();
+  }
+
+  #refreshAllocateToReserveTargetOptions() {
+    const actionExecutor = this.actionExecutorsValue.find(
+      (executor) => executor.key === "allocate_to_reserve",
+    );
+    if (!actionExecutor) return;
+
+    const targetType = this.allocateToReserveTargetTypeTarget.value;
+    const options =
+      targetType === "budget_category"
+        ? actionExecutor.options.budget_categories
+        : actionExecutor.options.pockets;
+
+    const selectEl = this.allocateToReserveTargetIdTarget;
+    selectEl.innerHTML = "";
+    for (const option of options || []) {
+      const optionEl = document.createElement("option");
+      optionEl.value = option[1];
+      optionEl.textContent = option[0];
+      selectEl.appendChild(optionEl);
+    }
   }
 }

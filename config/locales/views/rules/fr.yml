@@ -12,6 +12,22 @@ fr:
   rules:
     actions:
       value_placeholder: Entrez une valeur
+      allocate_to_reserve:
+        round_up_display: "arrondi à %{amount}"
+        target_type_label: Où
+        target_type:
+          pocket: Une enveloppe sur un compte
+          budget_category: Une enveloppe budgétaire
+        target_id_label: Laquelle
+        target_id_placeholder: Choisissez-en une
+        amount_mode_label: Combien
+        amount_mode:
+          fixed: Montant fixe
+          percent: Pourcentage
+          round_up: Arrondir à
+        amount_value_label_fixed: Montant
+        amount_value_label_percent: Pourcentage
+        amount_value_label_round_up: Arrondir au multiple de
     apply_all:
       ai_cost_message: Cela utilisera l'IA pour catégoriser jusqu'à %{transactions}
         transactions.
