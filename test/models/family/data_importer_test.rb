@@ -1833,6 +1833,185 @@ class Family::DataImporterTest < ActiveSupport::TestCase
     assert_equal 500.0, budget_category.budgeted_spending.to_f
   end
 
+  test "imports a manual pocket and its movements, recomputing allocated_amount from the replayed history" do
+    ndjson = build_ndjson([
+      {
+        type: "Account",
+        data: { id: "acct-1", name: "Checking", balance: "1000.00", currency: "USD", accountable_type: "Depository" }
+      },
+      {
+        type: "Pocket",
+        data: {
+          id: "pocket-1", account_id: "acct-1", name: "Vacation", description: "Trip fund",
+          fill_direction: "inflows", currency: "USD", allocated_amount: "999.00"
+        }
+      },
+      { type: "PocketMovement", data: { pocket_id: "pocket-1", amount: "50.00", note: "seed" } },
+      { type: "PocketMovement", data: { pocket_id: "pocket-1", amount: "-20.00", note: "withdraw" } }
+    ])
+
+    importer = Family::DataImporter.new(@family, ndjson)
+    importer.import!
+
+    pocket = Pocket.joins(:account).find_by!(accounts: { family_id: @family.id }, name: "Vacation")
+    assert_equal "Trip fund", pocket.description
+    assert_equal 2, pocket.movements.count
+    # The exported allocated_amount (999.00) is never trusted directly -- the
+    # real figure is recomputed from the replayed movements (50 - 20 = 30),
+    # proving the importer didn't just copy the literal column value.
+    assert_equal 30.0, pocket.allocated_amount.to_f
+  end
+
+  test "imports a tag-linked pocket, recomputing its total from the tag's already-imported transactions" do
+    ndjson = build_ndjson([
+      { type: "Account", data: { id: "acct-1", name: "Checking", balance: "1000.00", currency: "USD", accountable_type: "Depository" } },
+      { type: "Tag", data: { id: "tag-1", name: "pockets:Bills" } },
+      {
+        type: "Transaction",
+        data: {
+          id: "txn-1", account_id: "acct-1", date: "2024-01-05", amount: "-40.00", currency: "USD",
+          name: "Refund", tag_ids: [ "tag-1" ]
+        }
+      },
+      {
+        type: "Pocket",
+        data: { id: "pocket-1", account_id: "acct-1", name: "Bills", tag_id: "tag-1", fill_direction: "inflows", currency: "USD" }
+      }
+    ])
+
+    importer = Family::DataImporter.new(@family, ndjson)
+    importer.import!
+
+    pocket = Pocket.joins(:account).find_by!(accounts: { family_id: @family.id }, name: "Bills")
+    assert_not_nil pocket.tag_id
+    assert_equal 40.0, pocket.allocated_amount.to_f
+  end
+
+  test "imports a pocket-backed goal" do
+    ndjson = build_ndjson([
+      { type: "Account", data: { id: "acct-1", name: "Checking", balance: "1000.00", currency: "USD", accountable_type: "Depository" } },
+      { type: "Pocket", data: { id: "pocket-1", account_id: "acct-1", name: "Vacation", currency: "USD" } },
+      {
+        type: "Goal",
+        data: {
+          id: "goal-1", name: "Trip", kind: "one_off", state: "active", target_amount: "500.00",
+          target_mode: "fixed", currency: "USD", pocket_id: "pocket-1"
+        }
+      }
+    ])
+
+    importer = Family::DataImporter.new(@family, ndjson)
+    importer.import!
+
+    goal = @family.goals.find_by!(name: "Trip")
+    assert_equal "one_off", goal.kind
+    assert_equal 500.0, goal.target_amount.to_f
+    assert_not_nil goal.pocket_id
+    assert_equal "Vacation", goal.pocket.name
+  end
+
+  test "imports a funding_category-backed goal and restores a completed goal's frozen amount and date" do
+    ndjson = build_ndjson([
+      { type: "Category", data: { id: "cat-1", name: "Insurance", color: "#00FF00", classification: "expense" } },
+      {
+        type: "Goal",
+        data: {
+          id: "goal-1", name: "Annual insurance", kind: "one_off", state: "completed",
+          target_amount: "1200.00", target_mode: "fixed", currency: "USD", funding_category_id: "cat-1",
+          completed_amount: "1200.00", completed_at: "2024-03-15T12:00:00Z"
+        }
+      }
+    ])
+
+    importer = Family::DataImporter.new(@family, ndjson)
+    importer.import!
+
+    goal = @family.goals.find_by!(name: "Annual insurance")
+    assert_equal "completed", goal.state
+    assert_not_nil goal.funding_category_id
+    assert_equal "Insurance", goal.funding_category.name
+    # apply_state_change_side_effects would otherwise overwrite these with a
+    # freshly recomputed current_balance and Time.current on save.
+    assert_equal 1200.0, goal.completed_amount.to_f
+    assert_equal Time.zone.parse("2024-03-15T12:00:00Z"), goal.completed_at
+  end
+
+  test "imports a goal_accounts-backed goal and its expense categories, even though the goal has no funding source when it first saves" do
+    ndjson = build_ndjson([
+      { type: "Account", data: { id: "acct-1", name: "Savings", balance: "1000.00", currency: "USD", accountable_type: "Depository" } },
+      { type: "Category", data: { id: "cat-1", name: "Groceries", color: "#00FF00", classification: "expense" } },
+      {
+        type: "Goal",
+        data: {
+          id: "goal-1", name: "Emergency fund", kind: "one_off", state: "active",
+          target_amount: "1000.00", target_mode: "fixed", currency: "USD"
+        }
+      },
+      { type: "GoalAccount", data: { goal_id: "goal-1", account_id: "acct-1", allocated_amount: nil } },
+      { type: "GoalExpenseCategory", data: { goal_id: "goal-1", category_id: "cat-1" } }
+    ])
+
+    importer = Family::DataImporter.new(@family, ndjson)
+    importer.import!
+
+    goal = @family.goals.find_by!(name: "Emergency fund")
+    assert_equal 1, goal.goal_accounts.count
+    assert_nil goal.goal_accounts.first.allocated_amount
+    assert_equal 1, goal.goal_expense_categories.count
+    assert_equal "Groceries", goal.goal_expense_categories.first.category.name
+  end
+
+  test "imports a reallocation's paired budget_adjustments under a shared, remapped group_id" do
+    ndjson = build_ndjson([
+      { type: "Category", data: { id: "cat-1", name: "Groceries", color: "#00FF00", classification: "expense" } },
+      { type: "Category", data: { id: "cat-2", name: "Dining", color: "#0000FF", classification: "expense" } },
+      {
+        type: "BudgetAdjustment",
+        data: {
+          category_id: "cat-1", kind: "reallocation", amount: "-50.00", currency: "USD",
+          effective_on: "2024-01-15", group_id: "src-group-1"
+        }
+      },
+      {
+        type: "BudgetAdjustment",
+        data: {
+          category_id: "cat-2", kind: "reallocation", amount: "50.00", currency: "USD",
+          effective_on: "2024-01-15", group_id: "src-group-1"
+        }
+      }
+    ])
+
+    importer = Family::DataImporter.new(@family, ndjson)
+    importer.import!
+
+    adjustments = @family.budget_adjustments.where(kind: "reallocation")
+    assert_equal 2, adjustments.count
+    group_ids = adjustments.pluck(:group_id).uniq
+    assert_equal 1, group_ids.size
+    assert_not_equal "src-group-1", group_ids.first, "the source group_id is regenerated, not carried through as-is"
+  end
+
+  test "imports an opening balance budget_adjustment with no group_id" do
+    ndjson = build_ndjson([
+      { type: "Category", data: { id: "cat-1", name: "Insurance", color: "#00FF00", classification: "expense" } },
+      {
+        type: "BudgetAdjustment",
+        data: {
+          category_id: "cat-1", kind: "opening_balance", amount: "200.00", currency: "USD",
+          effective_on: "2024-01-01", note: "Pre-existing savings"
+        }
+      }
+    ])
+
+    importer = Family::DataImporter.new(@family, ndjson)
+    importer.import!
+
+    adjustment = @family.budget_adjustments.find_by!(kind: "opening_balance")
+    assert_nil adjustment.group_id
+    assert_equal 200.0, adjustment.amount.to_f
+    assert_equal "Pre-existing savings", adjustment.note
+  end
+
   test "imports rules with conditions and actions" do
     ndjson = build_ndjson([
       {
@@ -2279,6 +2458,51 @@ class Family::DataImporterTest < ActiveSupport::TestCase
           currency: "USD"
         }
       },
+      # Pocket
+      {
+        type: "Pocket",
+        data: {
+          id: "pocket-emergency",
+          account_id: "acct-main",
+          name: "Emergency",
+          currency: "USD"
+        }
+      },
+      # PocketMovement
+      {
+        type: "PocketMovement",
+        data: { pocket_id: "pocket-emergency", amount: "300.00" }
+      },
+      # Goal (pocket-backed)
+      {
+        type: "Goal",
+        data: {
+          id: "goal-emergency",
+          name: "Emergency fund",
+          kind: "one_off",
+          state: "active",
+          target_amount: "1000.00",
+          target_mode: "fixed",
+          currency: "USD",
+          pocket_id: "pocket-emergency"
+        }
+      },
+      # GoalExpenseCategory
+      {
+        type: "GoalExpenseCategory",
+        data: { goal_id: "goal-emergency", category_id: "cat-food" }
+      },
+      # BudgetAdjustment
+      {
+        type: "BudgetAdjustment",
+        data: {
+          category_id: "cat-food",
+          kind: "opening_balance",
+          amount: "150.00",
+          currency: "USD",
+          effective_on: "2024-01-01"
+        }
+      },
       # Rule
       {
         type: "Rule",
@@ -2309,6 +2533,11 @@ class Family::DataImporterTest < ActiveSupport::TestCase
     assert_equal 1, @family.transactions.count
     assert_equal 1, @family.budgets.count
     assert_equal 1, @family.budget_categories.count
+    assert_equal 1, @family.pockets.count
+    assert_equal 1, @family.pocket_movements.count
+    assert_equal 1, @family.goals.count
+    assert_equal 1, @family.goal_expense_categories.count
+    assert_equal 1, @family.budget_adjustments.count
     assert_equal 1, @family.rules.count
 
     # Verify relationships
@@ -2320,6 +2549,13 @@ class Family::DataImporterTest < ActiveSupport::TestCase
     recurring_transaction = @family.recurring_transactions.first
     assert_equal "Main Checking", recurring_transaction.account.name
     assert_equal "Local Grocery", recurring_transaction.merchant.name
+
+    goal = @family.goals.first
+    assert_equal 300.0, goal.pocket.allocated_amount.to_f
+    assert_equal "Food", goal.goal_expense_categories.first.category.name
+
+    adjustment = @family.budget_adjustments.first
+    assert_equal "Food", adjustment.category.name
   end
 
   # Everything below the series was silently absent from an export: a restored

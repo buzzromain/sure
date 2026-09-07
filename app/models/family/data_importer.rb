@@ -31,7 +31,7 @@ class Family::DataImporter
     end
   end
 
-  SUPPORTED_TYPES = %w[Account Balance Category Tag Merchant RecurringTransaction RecurrenceRule RecurringOccurrence RecurringAllocation RecurringPriceChange RecurringMatchRejection Transaction Transfer RejectedTransfer Trade Holding Valuation Budget BudgetCategory Rule].freeze
+  SUPPORTED_TYPES = %w[Account Balance Category Tag Merchant RecurringTransaction RecurrenceRule RecurringOccurrence RecurringAllocation RecurringPriceChange RecurringMatchRejection Transaction Transfer RejectedTransfer Trade Holding Valuation Budget BudgetCategory Pocket PocketMovement Goal GoalAccount GoalExpenseCategory BudgetAdjustment Rule].freeze
   ACCOUNTABLE_TYPE_CLASSES = {
     "Depository" => Depository, "Investment" => Investment, "Crypto" => Crypto,
     "Property" => Property, "Vehicle" => Vehicle, "OtherAsset" => OtherAsset,
@@ -52,6 +52,8 @@ class Family::DataImporter
     transactions: "Transaction",
     budgets: "Budget",
     securities: "Security",
+    pockets: "Pocket",
+    goals: "Goal",
     rules: "Rule"
   }.freeze
   SUMMARY_KEYS = {
@@ -74,6 +76,12 @@ class Family::DataImporter
     "Valuation" => "valuations",
     "Budget" => "budgets",
     "BudgetCategory" => "budget_categories",
+    "Pocket" => "pockets",
+    "PocketMovement" => "pocket_movements",
+    "Goal" => "goals",
+    "GoalAccount" => "goal_accounts",
+    "GoalExpenseCategory" => "goal_expense_categories",
+    "BudgetAdjustment" => "budget_adjustments",
     "Rule" => "rules"
   }.freeze
 
@@ -93,6 +101,8 @@ class Family::DataImporter
       transactions: {},
       budgets: {},
       securities: {},
+      pockets: {},
+      goals: {},
       rules: {}
     }
     @security_cache = {}
@@ -130,6 +140,15 @@ class Family::DataImporter
       import_valuations(records["Valuation"] || [])
       import_budgets(records["Budget"] || [])
       import_budget_categories(records["BudgetCategory"] || [])
+      # Pockets before goals: Goal#pocket_id needs a mapped pocket. Goals
+      # before goal_accounts/goal_expense_categories: both point back at a
+      # goal. budget_adjustments only needs categories, already mapped above.
+      import_pockets(records["Pocket"] || [])
+      import_goals(records["Goal"] || [])
+      import_goal_accounts(records["GoalAccount"] || [])
+      import_goal_expense_categories(records["GoalExpenseCategory"] || [])
+      import_pocket_movements(records["PocketMovement"] || [])
+      import_budget_adjustments(records["BudgetAdjustment"] || [])
       import_rules(records["Rule"] || [])
     end
 
@@ -595,6 +614,16 @@ class Family::DataImporter
     def imported_enum_value(value, allowed, fallback)
       value.to_s.in?(allowed.keys) ? value.to_s : fallback
     end
+
+    # Same as imported_enum_value, but for Goal's plain-array constants
+    # (KINDS/TARGET_MODES) and progress_basis/state, none of which are Rails
+    # `enum`s with a `.keys` hash.
+    def imported_from_list(value, allowed_list, fallback)
+      value.to_s.in?(allowed_list) ? value.to_s : fallback
+    end
+
+    GOAL_STATES = %w[active paused completed archived].freeze
+    GOAL_PROGRESS_BASES = %w[balance contributions].freeze
 
     def remap_optional_id(mapping_key, old_id, record_type:)
       return if old_id.blank?
@@ -1306,6 +1335,208 @@ class Family::DataImporter
 
         budget_category.save!
         increment_summary("BudgetCategory", created ? :created : :updated)
+      end
+    end
+
+    def import_pockets(records)
+      records.each do |record|
+        data = record["data"]
+        old_id = data["id"]
+
+        require_source_id!("Pocket", old_id)
+
+        new_account_id = mapped_id(:accounts, data["account_id"], record_type: "Pocket")
+        next unless new_account_id
+
+        new_tag_id = remap_optional_id(:tags, data["tag_id"], record_type: "Pocket")
+        next if data["tag_id"].present? && new_tag_id.blank?
+
+        account = @family.accounts.find(new_account_id)
+
+        pocket = mapped_record(:pockets, old_id, Pocket.where(account_id: new_account_id), record_type: "Pocket")
+        created = pocket.blank?
+        pocket ||= Pocket.new(account_id: new_account_id)
+
+        # allocated_amount is never assigned here: it is fully derived (manual
+        # movements plus a linked tag's total), and setting it directly on
+        # create would also fire seed_initial_movement, double-counting once
+        # import_pocket_movements replays the real history below. tag_id is
+        # assigned though -- a linked pocket recomputes its own total from
+        # the (already-imported) tagged transactions via sync_from_tag as
+        # soon as this record saves.
+        pocket.assign_attributes(
+          name: data["name"],
+          description: data["description"],
+          color: data["color"],
+          icon: data["icon"],
+          fill_direction: imported_enum_value(data["fill_direction"], Pocket.fill_directions, "inflows"),
+          currency: data["currency"] || account.currency,
+          tag_id: new_tag_id
+        )
+        pocket.save!
+        map_source!(:pockets, old_id, pocket)
+        increment_summary("Pocket", created ? :created : :updated)
+      end
+    end
+
+    def import_pocket_movements(records)
+      touched_pocket_ids = Set.new
+
+      records.each do |record|
+        data = record["data"]
+
+        new_pocket_id = mapped_id(:pockets, data["pocket_id"], record_type: "PocketMovement", required: false)
+        next if new_pocket_id.blank?
+
+        amount = data["amount"]&.to_d
+        next if amount.blank? || amount.zero?
+
+        # No natural key on this record -- same reasoning as
+        # RecurringAllocation's hand-recorded case: matched on the values
+        # that make it the same movement rather than on an id nothing else
+        # references.
+        movement = PocketMovement.find_or_initialize_by(pocket_id: new_pocket_id, amount: amount, note: data["note"])
+        created = movement.new_record?
+        movement.save!
+        touched_pocket_ids << new_pocket_id
+        increment_summary("PocketMovement", created ? :created : :updated)
+      end
+
+      Pocket.where(id: touched_pocket_ids.to_a).find_each(&:recompute!)
+    end
+
+    def import_goals(records)
+      records.each do |record|
+        data = record["data"]
+        old_id = data["id"]
+
+        require_source_id!("Goal", old_id)
+
+        new_pocket_id = remap_optional_id(:pockets, data["pocket_id"], record_type: "Goal")
+        next if data["pocket_id"].present? && new_pocket_id.blank?
+
+        new_funding_category_id = remap_optional_id(:categories, data["funding_category_id"], record_type: "Goal")
+        next if data["funding_category_id"].present? && new_funding_category_id.blank?
+
+        goal = mapped_record(:goals, old_id, @family.goals, record_type: "Goal")
+        created = goal.blank?
+        goal ||= @family.goals.build
+
+        goal.assign_attributes(
+          name: data["name"],
+          kind: imported_from_list(data["kind"], Goal::KINDS, "one_off"),
+          state: imported_from_list(data["state"], GOAL_STATES, "active"),
+          target_amount: data["target_amount"]&.to_d,
+          target_date: parse_import_date(data["target_date"]),
+          target_mode: imported_from_list(data["target_mode"], Goal::TARGET_MODES, "fixed"),
+          target_months: data["target_months"],
+          progress_basis: imported_from_list(data["progress_basis"], GOAL_PROGRESS_BASES, "balance"),
+          currency: data["currency"] || @family.currency,
+          color: data["color"],
+          icon: data["icon"],
+          notes: data["notes"],
+          include_uncategorized_expenses: boolean_import_value(data, "include_uncategorized_expenses", default: false),
+          consumed_amount: data["consumed_amount"]&.to_d || 0,
+          pocket_id: new_pocket_id,
+          funding_category_id: new_funding_category_id
+        )
+
+        # Skips validation: must_have_exactly_one_funding_source can never
+        # pass here for a goal_accounts-funded goal -- those rows land in
+        # import_goal_accounts right after this method runs, not before.
+        # The export only ever carried a goal that was valid when it existed.
+        goal.save!(validate: false)
+
+        # apply_state_change_side_effects (an after_save callback, fired
+        # because state just moved from the schema default "active" to
+        # whatever was imported) recomputes completed_amount from the goal's
+        # current live balance and stamps completed_at at Time.current for a
+        # completed/archived goal. Restore the historical, frozen export
+        # values afterward so a restored goal doesn't quietly get today's
+        # date and a recomputed figure instead of what was actually true
+        # when it closed.
+        if data["completed_amount"].present? || data["completed_at"].present?
+          goal.update_columns(
+            completed_amount: data["completed_amount"]&.to_d,
+            completed_at: data["completed_at"].present? ? Time.zone.parse(data["completed_at"].to_s) : nil
+          )
+        end
+
+        map_source!(:goals, old_id, goal)
+        increment_summary("Goal", created ? :created : :updated)
+      end
+    end
+
+    def import_goal_accounts(records)
+      records.each do |record|
+        data = record["data"]
+
+        new_goal_id = mapped_id(:goals, data["goal_id"], record_type: "GoalAccount")
+        next unless new_goal_id
+
+        new_account_id = mapped_id(:accounts, data["account_id"], record_type: "GoalAccount")
+        next unless new_account_id
+
+        goal_account = GoalAccount.find_or_initialize_by(goal_id: new_goal_id, account_id: new_account_id)
+        created = goal_account.new_record?
+        goal_account.allocated_amount = data["allocated_amount"]&.to_d
+        goal_account.save!
+        increment_summary("GoalAccount", created ? :created : :updated)
+      end
+    end
+
+    def import_goal_expense_categories(records)
+      records.each do |record|
+        data = record["data"]
+
+        new_goal_id = mapped_id(:goals, data["goal_id"], record_type: "GoalExpenseCategory")
+        next unless new_goal_id
+
+        new_category_id = mapped_id(:categories, data["category_id"], record_type: "GoalExpenseCategory")
+        next unless new_category_id
+
+        goal_expense_category = GoalExpenseCategory.find_or_initialize_by(goal_id: new_goal_id, category_id: new_category_id)
+        created = goal_expense_category.new_record?
+        goal_expense_category.save!
+        increment_summary("GoalExpenseCategory", created ? :created : :updated)
+      end
+    end
+
+    # group_id pairs a reallocation's debit/credit rows -- not an FK to a
+    # table, so it is regenerated (once per source group encountered) rather
+    # than resolved through mapped_id.
+    def import_budget_adjustments(records)
+      group_id_map = {}
+
+      records.each do |record|
+        data = record["data"]
+
+        new_category_id = mapped_id(:categories, data["category_id"], record_type: "BudgetAdjustment")
+        next unless new_category_id
+
+        amount = data["amount"]&.to_d
+        effective_on = parse_import_date(data["effective_on"])
+        next if amount.blank? || amount.zero? || effective_on.blank?
+
+        kind = imported_enum_value(data["kind"], BudgetAdjustment.kinds, "opening_balance")
+        new_group_id = data["group_id"].present? ? (group_id_map[data["group_id"]] ||= SecureRandom.uuid) : nil
+
+        # No natural single-column key (see PocketMovement above) -- matched
+        # on the values that identify the same adjustment. BudgetAdjustment
+        # only ever tracks the household chain on import, same simplification
+        # import_budgets already makes for Budget#user_id.
+        adjustment = BudgetAdjustment.find_or_initialize_by(
+          family_id: @family.id, user_id: nil, category_id: new_category_id,
+          kind: kind, amount: amount, effective_on: effective_on
+        )
+        created = adjustment.new_record?
+        adjustment.assign_attributes(
+          currency: data["currency"] || @family.currency,
+          note: data["note"],
+          group_id: new_group_id
+        )
+        adjustment.save!
+        increment_summary("BudgetAdjustment", created ? :created : :updated)
       end
     end
 

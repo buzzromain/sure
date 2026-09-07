@@ -517,6 +517,33 @@ class Family::DataExporter
         }.to_json
       end
 
+      # Export pockets (before goals: Goal#pocket_id needs a pocket already mapped on import)
+      @family.pockets.find_each do |pocket|
+        lines << { type: "Pocket", data: pocket.as_json }.to_json
+      end
+
+      @family.pocket_movements.find_each do |movement|
+        lines << { type: "PocketMovement", data: movement.as_json }.to_json
+      end
+
+      # Export goals (after pockets, categories: pocket_id/funding_category_id need them already mapped)
+      @family.goals.find_each do |goal|
+        lines << { type: "Goal", data: goal.as_json }.to_json
+      end
+
+      @family.goal_accounts.find_each do |goal_account|
+        lines << { type: "GoalAccount", data: goal_account.as_json }.to_json
+      end
+
+      @family.goal_expense_categories.find_each do |goal_expense_category|
+        lines << { type: "GoalExpenseCategory", data: goal_expense_category.as_json }.to_json
+      end
+
+      # Export budget reserve adjustments (opening balances and reallocations)
+      @family.budget_adjustments.find_each do |adjustment|
+        lines << { type: "BudgetAdjustment", data: adjustment.as_json }.to_json
+      end
+
       # Export rules with versioned schema
       @family.rules.includes(conditions: :sub_conditions, actions: []).find_each do |rule|
         lines << {
