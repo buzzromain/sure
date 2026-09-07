@@ -15,6 +15,11 @@ class Tag < ApplicationRecord
   has_many :taggings, dependent: :destroy
   has_many :transactions, through: :taggings, source: :taggable, source_type: "Transaction"
   has_many :import_mappings, as: :mappable, dependent: :destroy, class_name: "Import::Mapping"
+  # No `dependent:` here on purpose -- see release_linked_pockets below. A
+  # bulk `dependent: :nullify` would skip Pocket's own after_save
+  # (sync_from_tag), leaving allocated_amount stuck at its last tag-filled
+  # total instead of recomputed to 0.
+  has_many :pockets
 
   validates :name, presence: true, uniqueness: { scope: :family }
   validates :name, exclusion: { in: [ UNTAGGED_FILTER_VALUE ] }
@@ -40,6 +45,13 @@ class Tag < ApplicationRecord
     persisted? ? name : UNTAGGED_FILTER_VALUE
   end
 
+  # pockets.tag_id has no ON DELETE clause (NO ACTION), so destroying a tag
+  # a Pocket auto-fills from would otherwise raise ActiveRecord::InvalidForeignKey.
+  # Releasing through Pocket#update! rather than a bulk nullify so its own
+  # sync_from_tag callback recomputes allocated_amount to 0 -- the same
+  # outcome a user gets from clearing the tag on the pocket's own edit form.
+  before_destroy :release_linked_pockets
+
   def replace_and_destroy!(replacement)
     transaction do
       raise ActiveRecord::RecordInvalid, "Replacement tag cannot be the same as the tag being destroyed" if replacement == self
@@ -51,4 +63,9 @@ class Tag < ApplicationRecord
       destroy!
     end
   end
+
+  private
+    def release_linked_pockets
+      pockets.find_each { |pocket| pocket.update!(tag_id: nil) }
+    end
 end
