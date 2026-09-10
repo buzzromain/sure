@@ -20,6 +20,15 @@ class Demo::DataCleaner
 
     ApiKey.where(display_key: ApiKey::DEMO_MONITORING_KEY).delete_all
 
+    # Same silent-no-op shape, a different guard: Family::Subscribeable's
+    # cancel_or_reject_active_subscription (before_destroy) tries to cancel
+    # the demo subscription's fake stripe_id ("sub_demo_123") through the
+    # real Stripe provider, fails, and throws :abort -- which again no-ops
+    # the whole cascade below it instead of raising. delete_all bypasses the
+    # callback entirely; there's no real Stripe subscription behind a demo
+    # family to worry about cancelling.
+    Subscription.delete_all
+
     Family.destroy_all
     Setting.destroy_all
     InviteCode.destroy_all
