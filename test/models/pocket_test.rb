@@ -377,6 +377,49 @@ class PocketTest < ActiveSupport::TestCase
     assert_equal 999, @pocket.reload.allocated_amount
   end
 
+  # --- Correctness fixes ---
+
+  test "a tagged split parent does not double-count alongside its own tagged child" do
+    fresh_account = create_depository_account("Split Account")
+    fresh_tag = families(:dylan_family).tags.create!(name: "SplitFillTag")
+    pocket = fresh_account.pockets.create!(name: "Split Pocket", allocated_amount: 0, currency: "USD",
+                                            tag: fresh_tag, fill_direction: "both")
+
+    entry = Entry.create!(account: fresh_account, entryable: Transaction.new,
+                           date: 1.day.ago.to_date, name: "Paycheck", amount: -100, currency: "USD")
+    Tagging.create!(tag: fresh_tag, taggable: entry.entryable)
+    assert_equal 100, pocket.reload.allocated_amount
+
+    children = entry.split!([
+      { name: "Salary", amount: -70, category_id: nil },
+      { name: "Bonus", amount: -30, category_id: nil }
+    ])
+    Tagging.create!(tag: fresh_tag, taggable: children.first.entryable)
+
+    assert_equal 70, pocket.reload.allocated_amount,
+      "the split parent is excluded once it has children -- only the tagged child (70) should credit " \
+      "the pocket, not the parent's full amount plus the child's (170)"
+  end
+
+  test "a pocket already over what its account has free (because a sibling grew) can still be renamed" do
+    # Push @tagged_pocket (vacation, 500) up so it alone exceeds the account's
+    # 5000 balance once @pocket (emergency_fund, 1000) is also counted --
+    # bypassing validation (update_column) to simulate drift after the fact,
+    # the same way a balance drop or a sibling's own growth would.
+    @tagged_pocket.update_column(:allocated_amount, 4500)
+
+    @pocket.name = "Emergency Fund (renamed)"
+    assert @pocket.save, @pocket.errors.full_messages.to_sentence
+  end
+
+  test "growing an already-overflowing pocket's allocated_amount is still refused" do
+    @tagged_pocket.update_column(:allocated_amount, 4500)
+
+    @pocket.allocated_amount = 1500
+    assert_not @pocket.save
+    assert @pocket.errors[:allocated_amount].any?
+  end
+
   private
 
     def create_depository_account(name)
