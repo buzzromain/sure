@@ -11,8 +11,11 @@
   <div data-donut-chart-target="chartContainer" class="absolute inset-0 pointer-events-none"></div>
   <div data-donut-chart-target="contentContainer" class="flex items-center justify-center h-full">
     <div data-donut-chart-target="defaultContent" class="flex flex-col items-center text-center">
-      <span class="text-secondary text-xs mb-1"><%= t("goals.show.ring.saved") %></span>
-      <span class="text-3xl font-medium tabular-nums privacy-sensitive <%= percent_text_class %>"><%= percent %>%</span>
+      <% if show_label? %>
+        <span class="text-secondary text-xs mb-1"><%= t("goals.show.ring.saved") %></span>
+      <% end %>
+      <span class="font-medium tabular-nums privacy-sensitive <%= percent_text_class %>"
+            style="font-size: <%= percent_font_px %>px;"><%= percent %>%</span>
     </div>
   </div>
 </div>

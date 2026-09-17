@@ -48,4 +48,19 @@ class Goals::ProgressRingComponent < ApplicationComponent
     else "text-primary"
     end
   end
+
+  # Below the goal show page's own 180px, "Épargné" plus the percent have no
+  # room to both fit without overlapping (a pocket card renders this ring at
+  # 56px, next to a goal_progress line that already spells out the target) --
+  # drop the label rather than let it collide with the figure.
+  def show_label?
+    size >= 100
+  end
+
+  # Same ratio DS::ProgressRing scales its own centered percent by (size *
+  # 0.17) -- at the default 180px that lands within a rounding error of the
+  # text-3xl (30px) this replaces, so the goal show page is pixel-stable.
+  def percent_font_px
+    (size * 0.17).round
+  end
 end
