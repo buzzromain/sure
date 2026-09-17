@@ -55,6 +55,27 @@ class GoalsController < ApplicationController
     ]
   end
 
+  # Live preview for the months-of-expenses field, on a goal that is never
+  # saved. Builds an in-memory Goal from whatever the form currently holds
+  # and asks it the same question `apply_months_of_expenses_target` asks at
+  # save time -- one computation, so the number shown while typing and the
+  # number that lands in the database can never drift apart.
+  def preview_target
+    preview = Current.family.goals.new(
+      kind: "maintained",
+      target_mode: "months_of_expenses",
+      target_months: params[:target_months].presence || 6,
+      currency: params[:currency].presence || Current.family.primary_currency_code
+    )
+
+    amount = preview.preview_months_of_expenses_amount
+
+    render json: {
+      amount: amount,
+      formatted: amount ? Money.new(amount, preview.currency).format(precision: 0) : nil
+    }
+  end
+
   def create
     @goal = Current.family.goals.new(goal_params)
     accounts = lookup_accounts(params.dig(:goal, :account_ids))

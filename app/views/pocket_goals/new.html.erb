@@ -1,8 +1,9 @@
-<%# Same kind/target_mode/months/categories/live-preview block as the main
-    goal form (app/views/goals/_form.html.erb) — the reserve feature set
-    doesn't depend on what backs the goal, so a pocket-backed goal gets it in
-    full. Only the account-linking section is dropped, since the pocket
-    already is the funding source. %>
+<%# Same kind/target_mode/months/live-preview block as the main goal form
+    (app/views/goals/_form.html.erb) — the reserve feature set doesn't depend
+    on what backs the goal, so a pocket-backed goal gets it too. The
+    account-linking section is dropped (the pocket already is the funding
+    source), and so is sizing a reserve on specific categories -- that's a
+    separate Goal capability, not part of composing Goal onto Pocket. %>
 <div data-controller="goal-form goal-kind goal-target-preview"
      data-goal-form-currency-value="<%= Current.family.primary_currency_code %>"
      data-goal-form-require-account-value="false"
@@ -56,54 +57,6 @@
           <p class="mt-1 text-xs text-secondary"><%= t("goals.form.fields.target_months_hint") %></p>
           <% @goal.errors[:target_months].each do |message| %>
             <p class="mt-1.5 text-xs text-destructive"><%= message %></p>
-          <% end %>
-        </div>
-
-        <div data-goal-kind-target="categoryField" class="hidden">
-          <% selected_category_ids = @goal.selected_category_ids.map(&:to_s) %>
-          <%= render DS::Disclosure.new(
-                variant: :card,
-                open: selected_category_ids.any? || @goal.include_uncategorized_expenses?,
-                body_class: nil
-              ) do |disclosure| %>
-            <% disclosure.with_summary_content do %>
-              <div class="flex w-full items-center justify-between gap-3">
-                <div class="min-w-0">
-                  <span class="block text-sm font-medium text-primary"><%= t("goals.form.fields.expense_categories") %></span>
-                  <p class="mt-0.5 text-xs text-secondary"><%= t("goals.form.fields.expense_categories_hint") %></p>
-                </div>
-                <%= icon "chevron-down", size: "sm", color: "secondary", class: "shrink-0 group-open:rotate-180 motion-safe:transition-transform" %>
-              </div>
-            <% end %>
-
-            <div class="max-h-72 overflow-y-auto border-t border-subdued bg-container-inset p-1">
-              <%= hidden_field_tag "goal[expense_category_ids][]", "", id: nil %>
-
-              <label class="flex cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 hover:bg-surface-hover">
-                <%= hidden_field_tag "goal[include_uncategorized_expenses]", "0", id: nil %>
-                <%= check_box_tag "goal[include_uncategorized_expenses]", "1",
-                                  @goal.include_uncategorized_expenses?,
-                                  id: "goal_include_uncategorized_expenses",
-                                  class: "checkbox checkbox--light shrink-0",
-                                  data: { goal_target_preview_target: "uncategorizedCheckbox",
-                                          action: "change->goal-target-preview#refresh" } %>
-                <%= render partial: "categories/badge", locals: { category: Category.uncategorized } %>
-              </label>
-
-              <% @selectable_categories.each do |category| %>
-                <label class="flex cursor-pointer items-center gap-3 rounded-md border-t border-subdued px-3 py-2.5 hover:bg-surface-hover">
-                  <%= check_box_tag "goal[expense_category_ids][]", category.id,
-                                    selected_category_ids.include?(category.id.to_s),
-                                    id: "goal_expense_category_#{category.id}",
-                                    class: "checkbox checkbox--light shrink-0",
-                                    data: { goal_target_preview_target: "categoryCheckbox",
-                                            action: "change->goal-target-preview#refresh" } %>
-                  <span class="min-w-0 <%= "pl-5" if category.parent_id.present? %>">
-                    <%= render partial: "categories/badge", locals: { category: category } %>
-                  </span>
-                </label>
-              <% end %>
-            </div>
           <% end %>
         </div>
 
