@@ -57,6 +57,7 @@ fr:
         title: "Ajouter un objectif à cette enveloppe"
       create:
         success: "Objectif lié à l'enveloppe."
+      already_exists: "Cette enveloppe a déjà un objectif."
     move:
       title: "Déplacer de l'argent · %{name}"
       add_tab: "Ajouter"

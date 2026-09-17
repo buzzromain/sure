@@ -56,6 +56,7 @@ en:
         title: "Add a goal to this pocket"
       create:
         success: "Goal linked to pocket."
+      already_exists: "This pocket already has a goal."
     move:
       title: "Move money · %{name}"
       add_tab: "Add"
