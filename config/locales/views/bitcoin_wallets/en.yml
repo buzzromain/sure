@@ -23,8 +23,8 @@ en:
     confirmation: "Confirmed: %{confirmed} BTC · Pending change: %{pending} BTC"
     pending: Pending
     discovery_progress:
-      one: Checked 1 derived address
-      other: "Checked %{count} derived addresses"
+      one: 1 address checked so far
+      other: "%{count} addresses checked so far"
     showing_addresses: "Showing %{shown} of %{total} tracked addresses."
     address_count:
       one: Tracking 1 unique address
@@ -33,7 +33,7 @@ en:
     reconcile: "Existing BTC: %{previous}. Wallet BTC: %{current}. Connecting replaces the BTC quantity; it does not add this balance again or rewrite past transactions."
     connect: Connect Bitcoin position
     connected: Bitcoin wallet connected.
-    reconciliation: Bitcoin quantity reconciliation
+    reconciliation: "Wallet adjustment (%{quantity} BTC)"
     not_ready: Complete wallet discovery before connecting.
     history_truncated: Some transfer history was not returned. This does not change the observed current balance.
     addresses: Tracked addresses
@@ -43,10 +43,48 @@ en:
     refresh: Refresh status
     sync: Sync wallet
     disconnect: Disconnect Bitcoin
-    disconnect_confirm: Stop updating Bitcoin automatically? The account, current positions and history will remain.
+    disconnect_confirm: Stop tracking this wallet? Your BTC position and history stay in the account and become manual again.
     disconnected: Bitcoin wallet disconnected; the account and history remain.
     manage: Manage Bitcoin wallet
     connect_action: Connect Bitcoin wallet
     movements:
       received: "Received %{quantity} BTC"
       sent: "Sent %{quantity} BTC"
+    new_title: Track a Bitcoin wallet
+    read_only_short: "Watch-only: Sure reads public balances and can never spend. Never paste a seed phrase or private key."
+    key_label: Bitcoin address or xpub / zpub
+    key_placeholder: bc1q… or zpub6r…
+    key_hint: Paste one address, or your wallet's account-level xpub/zpub to follow every address it uses.
+    verification_address: One receive address from this wallet
+    verification_hint: Copy it from your wallet app. Sure checks that it belongs to the key before reading anything.
+    advanced: Advanced
+    gap_limit_hint: How many unused addresses to look ahead. Increase only if a balance is missing.
+    status:
+      tracking: Tracking
+      reading: Reading wallet
+      ready: Ready to track
+      needs_attention: Needs attention
+      retrying: Retrying
+    read_ago: "Read %{time} ago"
+    temporary_failure: "The blockchain moved while we were reading your wallet. We'll retry automatically; your balance is unchanged."
+    discovering_title: Reading your wallet…
+    discovering_address: Fetching the balance of this address.
+    wallet_value: Wallet value
+    pending_amount: "%{amount} BTC unconfirmed"
+    connect_explainer_new: Tracking adds this BTC position to the account and keeps it up to date every hour.
+    connect_explainer_replace: "This account currently records %{previous} BTC. Tracking replaces it with the wallet balance (%{difference} BTC); past activity is kept."
+    start_tracking: Start tracking
+    sync_now: Read now
+    read_again: Read again
+    stop_tracking: Stop tracking
+    cancel: Cancel
+    cancelled: Bitcoin wallet setup cancelled.
+    details: Addresses and sources
+    add_source_submit: Add
+    header_badge: Bitcoin wallet
+    holding_managed: Updated automatically from your Bitcoin wallet
+    manage_short: Manage
+    errors:
+      invalid_address: This doesn't look like a valid Bitcoin address. Check for a missing or extra character.
+      invalid_key: This isn't a valid account-level xpub or zpub. Export it from your wallet's account settings.
+      invalid_verification_address: This address isn't a valid Bitcoin address.

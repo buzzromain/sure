@@ -9,6 +9,7 @@ class BitcoinWalletsController < ApplicationController
   # Render source setup and the account's existing BTC security choices.
   def new
     @securities = bitcoin_securities
+    @form_values = {}
   end
 
   # Create draft tracking and its prerequisites atomically, then queue discovery
@@ -24,7 +25,8 @@ class BitcoinWalletsController < ApplicationController
     @wallet.sync_later
     redirect_to account_bitcoin_wallet_path(@account), status: :see_other
   rescue ActiveRecord::RecordInvalid => error
-    @error_message = error.record.errors.full_messages.to_sentence
+    @field_errors = error.record.errors
+    @form_values = form_values
     @securities = bitcoin_securities
     render :new, status: :unprocessable_entity
   end
@@ -55,7 +57,8 @@ class BitcoinWalletsController < ApplicationController
     end
     redirect_to account_bitcoin_wallet_path(@account), status: :see_other
   rescue ActiveRecord::RecordInvalid => error
-    @error_message = error.record.errors.full_messages.to_sentence
+    @field_errors = error.record.errors
+    @form_values = form_values
     prepare_show
     render :show, status: :unprocessable_entity
   end
@@ -86,8 +89,9 @@ class BitcoinWalletsController < ApplicationController
 
   # Stop wallet tracking while leaving the Crypto account available manually.
   def destroy
+    notice = @wallet.account_provider ? t("bitcoin_wallets.disconnected") : t("bitcoin_wallets.cancelled")
     @wallet.disconnect!
-    redirect_to account_path(@account), notice: t("bitcoin_wallets.disconnected"), status: :see_other
+    redirect_to account_path(@account), notice: notice, status: :see_other
   end
 
   private
@@ -100,12 +104,24 @@ class BitcoinWalletsController < ApplicationController
       @pending_quantity = @wallet.pending_quantity
       @confirmed_quantity = @wallet.quantity - @pending_quantity
       @discovery_checked = @sources.sum { |source| source.discovery.values.sum { |branch| branch.fetch("index", 0).to_i } }
+      @hd_wallet = @sources.any? { |source| source.kind == "bip84" }
+      @form_values ||= {}
+      price = BitcoinWalletAccount::Processor.new(@wallet).price_on(Date.current)
+      @value_money = Money.new(@wallet.quantity * price, @account.currency) if price
+      @quantity_difference = @wallet.quantity - @previous_quantity.to_d
       @wallet_error_key = case @wallet.last_error
       when "BitcoinWalletAccount::Discovery::AddressMismatch" then "address_mismatch"
       when "BitcoinWalletAccount::Discovery::Conflict" then "address_conflict"
       when "MissingPrice" then "missing_price"
+      when "BitcoinWalletAccount::Snapshot::ChangedTip", "BitcoinWalletAccount::Snapshot::IncompleteMempool",
+           /\AProvider::MempoolSpace::/ then "temporary_failure"
       else "failed"
       end
+    end
+
+    # Keep what the user typed so a validation error never forces them to start over.
+    def form_values
+      params.fetch(:source, {}).permit(:key, :receive_address, :gap_limit).to_h.symbolize_keys
     end
 
     # Restrict management to an accessible Crypto account on which the current
@@ -121,9 +137,17 @@ class BitcoinWalletsController < ApplicationController
       raise ActiveRecord::RecordNotFound unless @wallet && @wallet.onchain_wallet_item.family_id == Current.family.id
     end
 
-    # Allow only public source inputs; key fields are filtered from request logs.
+    # Accept one pasted value and infer its kind: an account-level xpub/zpub is
+    # an HD source verified by a receive address; anything else is an address.
     def source_params
-      params.require(:source).permit(:kind, :receive_address, :extended_public_key, :gap_limit)
+      input = params.require(:source).permit(:key, :receive_address, :gap_limit)
+      key = input[:key].to_s.strip
+      if key.match?(/\A[xz]pub/)
+        { kind: "bip84", extended_public_key: key, receive_address: input[:receive_address],
+          gap_limit: input[:gap_limit].presence || 20 }
+      else
+        { kind: "address", receive_address: key }
+      end
     end
 
     # Find existing BTC-like positions in this account, avoiding a separate

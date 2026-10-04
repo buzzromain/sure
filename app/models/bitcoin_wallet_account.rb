@@ -113,7 +113,8 @@ class BitcoinWalletAccount < ApplicationRecord
       security: security, quantity: difference, price: price, amount: 0, currency: account.currency,
       date: Date.current, source: "bitcoin_wallet_reconciliation",
       external_id: "bitcoin_wallet_#{id}_reconciliation_#{SecureRandom.uuid}",
-      name: I18n.t("bitcoin_wallets.reconciliation", locale: account.family.locale),
+      name: I18n.t("bitcoin_wallets.reconciliation", locale: account.family.locale,
+        quantity: "#{'+' if difference.positive?}#{difference.to_s('F')}"),
       activity_label: Trade::TRANSFER_LABEL
     )
     entry.entryable.update!(extra: entry.entryable.extra.to_h.merge("balance_adjustment" => true))

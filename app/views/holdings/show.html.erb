@@ -36,6 +36,21 @@
             ) %>
           </div>
         <% end %>
+        <% managed_by_wallet = @holding.account.provider_managed_security?(@holding.security_id) && @holding.account.bitcoin_wallet_account %>
+        <% if managed_by_wallet %>
+          <div class="px-3 pt-2">
+            <div class="flex items-center justify-between gap-3 rounded-lg bg-surface-inset px-3 py-2 text-sm">
+              <span class="flex items-center gap-2 text-secondary">
+                <%= icon "bitcoin", size: "sm" %>
+                <%= t("bitcoin_wallets.holding_managed") %>
+              </span>
+              <% if preview_features_enabled? && Current.user&.admin? %>
+                <%= link_to t("bitcoin_wallets.manage_short"), account_bitcoin_wallet_path(@holding.account),
+                            class: "text-primary underline", data: { turbo_frame: :modal } %>
+              <% end %>
+            </div>
+          </div>
+        <% end %>
         <dl class="space-y-3 px-3 py-2">
           <div data-controller="holding-security-remap">
             <div class="flex items-center justify-between text-sm">
@@ -48,7 +63,7 @@
                   </span>
                   <%= icon "lock", size: "xs", class: "text-secondary" %>
                 <% end %>
-                <button type="button"
+                <button type="button" <%= "hidden" if managed_by_wallet %>
                         data-action="click->holding-security-remap#toggle"
                   class="text-secondary hover:text-primary"
                   aria-label="<%= t(".edit_security") %>">
